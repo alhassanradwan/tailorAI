@@ -1,0 +1,36 @@
+import os
+from datetime import timedelta
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+class Config:
+    """Application configuration settings"""
+    
+    # Flask settings
+    SECRET_KEY = os.getenv('FLASK_SECRET_KEY', 'default-secret-key')
+    DEBUG = os.getenv('FLASK_ENV') == 'development'
+    
+    # JWT settings
+    JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'jwt-secret-key-change-this')
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=8)
+    JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=30)
+    JWT_TOKEN_LOCATION = ['headers']
+    JWT_HEADER_NAME = 'Authorization'
+    JWT_HEADER_TYPE = 'Bearer'
+    
+    # MongoDB settings
+    MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
+    MONGODB_DB_NAME = os.getenv('MONGODB_DB_NAME', 'adaptiveai')
+    
+    # Admin credentials
+    ADMIN_EMAIL = 'hassangrdwan@gmail.com'
+    ADMIN_PASSWORD_HASH = None  # Will be set on first admin login
+    
+    # API Keys (for future use with AI agents)
+    OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
+    HUGGINGFACE_API_KEY = os.getenv('HUGGINGFACE_API_KEY', '')
+    
+    # CORS settings (allow frontend to connect)
+    CORS_ORIGINS = ['http://127.0.0.1:5500', 'http://localhost:5500', 'http://localhost:3000', 'http://127.0.0.1:3000']
