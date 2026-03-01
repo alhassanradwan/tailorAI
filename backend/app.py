@@ -50,3 +50,4 @@ def home():
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000, use_reloader=False)
+## Note: use_reloader=False is important to prevent the app from running twice in development mode.
