@@ -40,3 +40,13 @@ build/
 # OS/Editor
 .DS_Store
 .vscode/
+
+.env
+*.env
+backend/.env
+frontend/.env
+
+# secrets
+.env
+*.env
+backend/.env
