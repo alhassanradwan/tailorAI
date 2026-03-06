@@ -89,144 +89,9 @@ export default function Chat() {
     }
   }, [userKey, currentSession, setChatMessages]);
 
-  // Analyze & update profile
-  // eslint-disable-next-line no-unused-vars
-  const analyzeAndUpdateProfile = async (userMessage, _aiResponse) => {
-    try {
-      const { data } = await api.post('/adaptive/analyze', { message: userMessage, profile });
-      if (!data.success || !data.analysis) return;
-
-      const analysis = data.analysis;
-      const recs = analysis.recommendations || {};
-      const meta = analysis.message_analysis || {};
-
-      setProfile((prev) => {
-        const p = { ...prev };
-        const ba = { ...p.behavioral_analytics };
-
-        if (analysis.question_type && ba.question_types[analysis.question_type] !== undefined) {
-          ba.question_types[analysis.question_type]++;
-        }
-        if (analysis.complexity && ba.complexity_distribution[analysis.complexity] !== undefined) {
-          ba.complexity_distribution[analysis.complexity]++;
-        }
-
-        const topics = { ...ba.topics_discussed };
-        (analysis.topics || []).forEach((t) => {
-          if (!topics[t]) {
-            topics[t] = {
-              count: 0,
-              first_seen: new Date().toISOString(),
-              last_seen: new Date().toISOString(),
-              complexity_levels: { beginner: 0, intermediate: 0, advanced: 0 },
-              verified: false,
-            };
-          }
-          topics[t] = { ...topics[t], count: topics[t].count + 1, last_seen: new Date().toISOString() };
-          if (analysis.complexity) {
-            topics[t].complexity_levels = {
-              ...topics[t].complexity_levels,
-              [analysis.complexity]: (topics[t].complexity_levels[analysis.complexity] || 0) + 1,
-            };
-          }
-        });
-        ba.topics_discussed = topics;
-
-        const eng = { ...ba.engagement_metrics };
-        eng.total_messages++;
-        const prevTotal = eng.avg_message_length * (eng.total_messages - 1);
-        eng.avg_message_length = (prevTotal + (meta.word_count || 0)) / eng.total_messages;
-        if (meta.has_code) eng.code_requests++;
-        if (meta.uncertainty_markers) eng.uncertainty_count += meta.uncertainty_markers;
-        ba.engagement_metrics = eng;
-
-        ba.last_analyzed = new Date().toISOString();
-        p.behavioral_analytics = ba;
-
-        const strong = [...(p.strong_topics || [])];
-        const weak = [...(p.weak_topics || [])];
-
-        (recs.add_to_strong_topics || []).forEach((t) => { if (!strong.includes(t)) strong.push(t); });
-        (recs.add_to_weak_topics || []).forEach((t) => { if (!weak.includes(t) && !strong.includes(t)) weak.push(t); });
-        (recs.move_to_strong_topics || []).forEach((t) => {
-          const idx = weak.indexOf(t);
-          if (idx > -1) { weak.splice(idx, 1); if (!strong.includes(t)) strong.push(t); }
-        });
-
-        p.strong_topics = strong;
-        p.weak_topics = weak;
-
-        if (recs.update_skill_level && recs.update_skill_level !== p.skill_level) {
-          const sp = [...(ba.skill_progression || [])];
-          sp.push({ from: p.skill_level || p.python, to: recs.update_skill_level, timestamp: new Date().toISOString() });
-          ba.skill_progression = sp;
-          p.skill_level = recs.update_skill_level;
-        }
-
-        const ks = { ...p.knowledge_state };
-        (analysis.topics || []).forEach((topic) => {
-          const td = topics[topic];
-          if (td && td.count >= 2) {
-            const cl = td.complexity_levels;
-            const total = cl.beginner + cl.intermediate + cl.advanced;
-            const mastery = total > 0
-              ? Math.min(
-                1.0,
-                (cl.beginner * 0.2 + cl.intermediate * 0.5 + cl.advanced * 0.9) / total + Math.min(0.15, td.count * 0.015)
-              )
-              : 0.1;
-
-            ks[topic] = {
-              mastery_level: Math.round(mastery * 100) / 100,
-              interactions: td.count,
-              last_complexity: analysis.complexity,
-              last_seen: new Date().toISOString(),
-            };
-          }
-        });
-        p.knowledge_state = ks;
-
-        if (recs.misconception_detected) {
-          const misc = { ...p.misconceptions };
-          const mt = recs.misconception_topic || (analysis.topics || [])[0] || 'general';
-          if (!misc[mt]) {
-            misc[mt] = {
-              count: 0,
-              detail: recs.misconception_detail || 'Possible misunderstanding detected',
-              first_seen: new Date().toISOString(),
-              corrected: false,
-            };
-          }
-          misc[mt] = { ...misc[mt], count: misc[mt].count + 1, last_seen: new Date().toISOString() };
-          p.misconceptions = misc;
-        }
-
-        p.current_adaptations = {
-          socratic_mode: recs.trigger_socratic_mode || false,
-          emotional_state: recs.emotional_state || 'neutral',
-          suggested_approach: recs.suggested_approach || 'explain_simply',
-          comprehension_check: recs.comprehension_check_topic || null,
-        };
-
-        const msg = userMessage.toLowerCase();
-        const cp = { ...p.conversation_preferences };
-        if (msg.includes('give me an example') || msg.includes('for example') || msg.includes('show me example')) cp.prefers_examples = true;
-        if (msg.includes('show me code') || msg.includes('write code') || msg.includes('code example') || meta.has_code) cp.prefers_code = true;
-        if (msg.includes('analogy') || msg.includes('like what') || msg.includes('eli5')) cp.prefers_analogies = true;
-        if (msg.includes('explain simply') || msg.includes('simple terms')) cp.explanation_style = 'simple';
-        else if (msg.includes('technically') || msg.includes('in depth') || msg.includes('detailed')) cp.explanation_style = 'technical';
-        if (msg.includes('friendly') || msg.includes('casual')) cp.preferred_tone = 'friendly';
-        else if (msg.includes('formal') || msg.includes('professional')) cp.preferred_tone = 'formal';
-        if (msg.includes('short') || msg.includes('brief') || msg.includes('concise')) cp.preferred_length = 'short';
-        else if (msg.includes('long') || msg.includes('elaborate')) cp.preferred_length = 'detailed';
-        p.conversation_preferences = cp;
-
-        return p;
-      });
-    } catch {
-      console.log('Analysis failed (non-critical)');
-    }
-  };
+  // ── analyzeAndUpdateProfile REMOVED ──
+  // All analytics are now computed server-side in KnowledgeStateService.update_from_analysis()
+  // which is called automatically by the /chat/groq endpoint.
 
   // Send message
   const sendMessage = async (text) => {
@@ -332,7 +197,7 @@ export default function Chat() {
 
         ChatHistory.addMessage(userKey, session.id, { text: data.response, sender: 'agent', timestamp: new Date().toISOString() });
 
-        await analyzeAndUpdateProfile(userMsg, data.response);
+        // Analytics are now handled server-side automatically
         saveContext();
       } else {
         throw new Error(data.error || 'API error');

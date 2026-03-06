@@ -52,9 +52,9 @@ AdaptiveAI/
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Python 3.9+
+- **Python 3.11** (3.11.x required — 3.12+ and 3.14 are **not** supported due to MongoDB TLS and Pydantic compatibility issues)
 - MongoDB (local or Atlas)
-- OpenAI API key
+- Groq API key (or OpenAI API key)
 
 ### Backend Setup
 
@@ -63,19 +63,24 @@ AdaptiveAI/
    cd backend
    ```
 
-2. **Create virtual environment:**
+2. **Create virtual environment (Python 3.11):**
+
+   > **Important:** You must use Python 3.11. Using Python 3.14 causes MongoDB Atlas TLS handshake errors.
+
+   ```powershell
+   # Windows — use the py launcher to target 3.11
+   py -3.11 -m venv venv
+   .\venv\Scripts\Activate.ps1
+   ```
    ```bash
-   python -m venv venv
-   
-   # Windows
-   venv\Scripts\activate
-   
-   # Mac/Linux
+   # Mac / Linux
+   python3.11 -m venv venv
    source venv/bin/activate
    ```
 
 3. **Install dependencies:**
    ```bash
+   pip install --upgrade pip
    pip install -r requirements.txt
    ```
 
@@ -87,9 +92,9 @@ AdaptiveAI/
 5. **Edit .env with your settings:**
    ```env
    FLASK_SECRET_KEY=your-secret-key
-   MONGODB_URI=mongodb://localhost:27017/
+   MONGODB_URI=mongodb+srv://<user>:<pass>@cluster.mongodb.net/
    MONGODB_DB_NAME=adaptiveai
-   OPENAI_API_KEY=sk-your-openai-key
+   GROQ_API_KEY=gsk_your-groq-key
    ```
 
 6. **Start MongoDB** (if using local):

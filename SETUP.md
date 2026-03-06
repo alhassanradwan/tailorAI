@@ -1,16 +1,29 @@
 # AdaptiveAI - Setup & Installation Guide
 
 ## Prerequisites
-- Python 3.9 or higher
+- **Python 3.11** (3.11.x required — 3.12+ / 3.14 cause MongoDB TLS and Pydantic errors)
 - MongoDB (local or MongoDB Atlas)
-- OpenAI API key
+- Groq API key (or OpenAI API key)
 - Modern web browser
 
 ## Backend Setup
 
-### 1. Install Python Dependencies
+### 1. Create Virtual Environment (Python 3.11)
+
+> **Important:** The project requires Python 3.11. Python 3.14 causes MongoDB Atlas TLS handshake failures.
+
 ```powershell
 cd backend
+
+# Remove old venv if it exists (created with wrong Python version)
+if (Test-Path ./venv) { Remove-Item -Recurse -Force ./venv }
+
+# Create new venv with Python 3.11
+py -3.11 -m venv venv
+.\venv\Scripts\Activate.ps1
+
+# Upgrade pip and install dependencies
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
 

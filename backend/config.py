@@ -33,4 +33,8 @@ class Config:
     HUGGINGFACE_API_KEY = os.getenv('HUGGINGFACE_API_KEY', '')
     
     # CORS settings (allow frontend to connect)
-    CORS_ORIGINS = ['http://127.0.0.1:5500', 'http://localhost:5500', 'http://localhost:3000', 'http://127.0.0.1:3000']
+    # In production, set CORS_ORIGINS env var as comma-separated URLs
+    CORS_ORIGINS = [
+        o.strip() for o in
+        os.getenv('CORS_ORIGINS', 'http://127.0.0.1:5500,http://localhost:5500,http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173').split(',')
+    ]

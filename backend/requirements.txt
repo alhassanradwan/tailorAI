@@ -1,4 +1,5 @@
 # AdaptiveAI Backend Dependencies
+# Python 3.11 required (3.11.x)
 # Install with: pip install -r requirements.txt
 
 # Flask Framework
@@ -9,18 +10,23 @@ flask-cors==4.0.0
 flask-jwt-extended==4.6.0
 PyJWT==2.8.0
 
-# MongoDB
-pymongo==4.6.1
+# MongoDB (with SRV support for Atlas)
+pymongo[srv]==4.6.1
+dnspython>=2.4.0
 
 # AI APIs
 openai==1.12.0
-groq==1.0.0
+groq==0.4.2
+httpx==0.27.2
 
 # Environment Variables
 python-dotenv==1.0.0
 
 # Password Hashing
 werkzeug==3.0.1
+
+# Rate Limiting
+flask-limiter==3.5.0
 
 # Optional: For production deployment
 gunicorn==21.2.0

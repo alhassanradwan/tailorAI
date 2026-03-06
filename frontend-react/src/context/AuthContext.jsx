@@ -1,45 +1,15 @@
 
-import { createContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useState, useEffect, useCallback, useRef } from 'react';
 import api from '../api/axios';
 import { migrateChatHistory, migrateProfilePicture } from '../utils/helpers';
 
 const AuthContext = createContext(null);
 
-// Default profile structure
-const defaultBehavioralAnalytics = {
-  question_types: { definition: 0, how_to: 0, why: 0, comparison: 0, debugging: 0, code_request: 0, general: 0 },
-  topics_discussed: {},
-  complexity_distribution: { beginner: 0, intermediate: 0, advanced: 0 },
-  skill_progression: [],
-  engagement_metrics: { total_messages: 0, avg_message_length: 0, follow_up_rate: 0, code_requests: 0, uncertainty_count: 0 },
-  last_analyzed: null,
-};
-
-const defaultConversationPreferences = {
-  explanation_style: '',
-  prefers_examples: false,
-  prefers_code: false,
-  prefers_analogies: false,
-  preferred_tone: '',
-  preferred_length: '',
-};
-
-const defaultAdaptations = {
-  socratic_mode: false,
-  emotional_state: 'neutral',
-  suggested_approach: 'explain_simply',
-  comprehension_check: null,
-};
-
+// Lightweight profile defaults (analytics now live server-side in knowledge_states collection)
 function ensureProfileFields(profile) {
   if (!profile) return profile;
   return {
     ...profile,
-    behavioral_analytics: { ...defaultBehavioralAnalytics, ...profile.behavioral_analytics },
-    knowledge_state: profile.knowledge_state || {},
-    misconceptions: profile.misconceptions || {},
-    conversation_preferences: { ...defaultConversationPreferences, ...profile.conversation_preferences },
-    current_adaptations: { ...defaultAdaptations, ...profile.current_adaptations },
     strong_topics: profile.strong_topics || [],
     weak_topics: profile.weak_topics || [],
   };
@@ -151,6 +121,12 @@ export function AuthProvider({ children }) {
       console.error('Failed to save context:', err);
     }
   }, [profile, chatMessages, currentStep, selectedTone]);
+
+  // ✅ Keep saveContext ref updated for intervals
+  const saveContextRef = useRef(saveContext);
+  useEffect(() => {
+    saveContextRef.current = saveContext;
+  }, [saveContext]);
 
   // ─── Load context from backend ───
   const loadContext = useCallback(async () => {
@@ -270,12 +246,13 @@ export function AuthProvider({ children }) {
       try {
         const { data } = await api.get('/profile/get');
 
-        if (data.profile) {
+        if (data.success && data.user) {
+          const userDoc = data.user;
           const u = {
-            email: data.profile.email || cached?.email || localStorage.getItem('last_logged_in_user') || '',
-            name: data.profile.full_name || data.profile.name || cached?.name || '',
-            id: data.profile._id || data.profile.id || cached?.id || '',
-            isAdmin: localStorage.getItem('admin_auth') === 'true' || cached?.isAdmin || false,
+            email: userDoc.email || cached?.email || localStorage.getItem('last_logged_in_user') || '',
+            name: userDoc.profile?.full_name || userDoc.username || cached?.name || '',
+            id: userDoc._id || cached?.id || '',
+            isAdmin: userDoc.is_admin || cached?.isAdmin || false,
           };
 
           setUser(u);
@@ -283,12 +260,20 @@ export function AuthProvider({ children }) {
 
           // ✅ run migrations only once
           runMigrationsOnce(u.id || u.email, u.email);
-        }
 
-        await loadContext();
+          if (userDoc.profile) setProfile(ensureProfileFields(userDoc.profile));
+
+          // Only load context if session is valid
+          await loadContext();
+        } else {
+          // Server said success=false or no user — treat as logged out
+          clearSession();
+        }
         setLoading(false);
-      } catch {
-        await loadContext();
+      } catch (err) {
+        // 401/403 = invalid token → clear everything, don't retry
+        console.warn('Session check failed:', err?.response?.status || err.message);
+        clearSession();
         setLoading(false);
       }
     };
@@ -300,17 +285,21 @@ export function AuthProvider({ children }) {
   // ─── Auto-save every 30s ───
   useEffect(() => {
     const interval = setInterval(() => {
-      if (getAccessToken()) saveContext();
+      if (getAccessToken()) {
+        saveContextRef.current();
+      }
     }, 30000);
     return () => clearInterval(interval);
-  }, [saveContext]);
+  }, []); // Stable interval, uses ref for latest saveContext
 
   // ─── Save on beforeunload ───
   useEffect(() => {
-    const handler = () => saveContext();
+    const handler = () => {
+      saveContextRef.current();
+    };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
-  }, [saveContext]);
+  }, []); // Stable listener, uses ref for latest saveContext
 
   const value = {
     user,

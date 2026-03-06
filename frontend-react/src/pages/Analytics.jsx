@@ -1,12 +1,54 @@
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useAuth from '../hooks/useAuth';
+import api from '../api/axios';
 
 export default function Analytics() {
-  const { profile } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
-  const ba = profile?.behavioral_analytics;
 
-  if (!profile || !ba) {
+  const [summary, setSummary] = useState(null);
+  const [mastery, setMastery] = useState([]);
+  const [miscItems, setMiscItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch all analytics data from backend on mount
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const [sumRes, mastRes, miscRes] = await Promise.all([
+          api.get('/analytics/summary'),
+          api.get('/analytics/mastery-map'),
+          api.get('/analytics/misconceptions'),
+        ]);
+        if (cancelled) return;
+        if (sumRes.data.success) setSummary(sumRes.data.summary);
+        if (mastRes.data.success) setMastery(mastRes.data.mastery || []);
+        if (miscRes.data.success) setMiscItems(miscRes.data.misconceptions || []);
+      } catch (err) {
+        console.error('Failed to load analytics:', err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [user]);
+
+  if (loading) {
+    return (
+      <section className="view active" id="analytics">
+        <div className="analytics-container" style={{ textAlign: 'center', padding: '60px 20px' }}>
+          <h2>Loading Analytics…</h2>
+        </div>
+      </section>
+    );
+  }
+
+  if (!summary || summary.total_messages === 0) {
     return (
       <section className="view active" id="analytics">
         <div className="analytics-container" style={{ textAlign: 'center', padding: '60px 20px' }}>
@@ -18,18 +60,25 @@ export default function Analytics() {
     );
   }
 
-  const cd = ba.complexity_distribution || { beginner: 0, intermediate: 0, advanced: 0 };
+  const cd = summary.complexity_distribution || { beginner: 0, intermediate: 0, advanced: 0 };
   const total = cd.beginner + cd.intermediate + cd.advanced;
   const bPct = total > 0 ? ((cd.beginner / total) * 100).toFixed(0) : 0;
   const iPct = total > 0 ? ((cd.intermediate / total) * 100).toFixed(0) : 0;
   const aPct = total > 0 ? ((cd.advanced / total) * 100).toFixed(0) : 0;
 
-  const adapts = profile.current_adaptations || {};
+  // Adaptation badge
+  const prefs = summary.conversation_preferences || {};
   let badgeText = 'Normal Mode';
   let description = 'AI is providing balanced explanations tailored to your level';
-  if (adapts.socratic_mode) { badgeText = 'Socratic Mode'; description = 'AI is using guided questioning to help you discover answers'; }
-  else if (adapts.emotional_state === 'frustrated') { badgeText = 'Support Mode'; description = 'AI is providing extra encouragement and simplified explanations'; }
-  else if (adapts.emotional_state === 'curious') { badgeText = 'Exploration Mode'; description = 'AI is offering deeper insights and advanced topics'; }
+  if (prefs.preferred_length === 'short') {
+    badgeText = 'Concise Mode';
+    description = 'AI is giving brief, focused answers as you requested';
+  } else if (prefs.preferred_length === 'detailed') {
+    badgeText = 'Deep Dive Mode';
+    description = 'AI is providing thorough, in-depth explanations';
+  }
+
+  const activeMisc = miscItems.filter((m) => !m.corrected);
 
   return (
     <section className="view active" id="analytics">
@@ -44,19 +93,19 @@ export default function Analytics() {
         <div className="analytics-grid">
           <div className="analytics-card glass-effect">
             <div className="analytics-card-label">Skill Level</div>
-            <div className="analytics-card-value">{profile.skill_level || profile.python || 'Beginner'}</div>
+            <div className="analytics-card-value">{summary.skill_level || 'Beginner'}</div>
           </div>
           <div className="analytics-card glass-effect">
             <div className="analytics-card-label">Questions Asked</div>
-            <div className="analytics-card-value">{ba.engagement_metrics?.total_messages || 0}</div>
+            <div className="analytics-card-value">{summary.total_messages}</div>
           </div>
           <div className="analytics-card glass-effect">
             <div className="analytics-card-label">Topics Explored</div>
-            <div className="analytics-card-value">{Object.keys(ba.topics_discussed || {}).length}</div>
+            <div className="analytics-card-value">{summary.topics_count}</div>
           </div>
           <div className="analytics-card glass-effect">
-            <div className="analytics-card-label">Sessions</div>
-            <div className="analytics-card-value">{profile.conversation_count || 0}</div>
+            <div className="analytics-card-label">Avg Mastery</div>
+            <div className="analytics-card-value">{(summary.avg_mastery * 100).toFixed(0)}%</div>
           </div>
         </div>
 
@@ -82,21 +131,42 @@ export default function Analytics() {
           </div>
         </div>
 
+        {/* Topic Mastery Map */}
+        {mastery.length > 0 && (
+          <div className="analytics-section glass-effect">
+            <h3>Topic Mastery</h3>
+            <div className="complexity-bars">
+              {mastery.slice(0, 10).map((t) => (
+                <div className="complexity-row" key={t.topic}>
+                  <span className="complexity-label">{t.topic.replace(/_/g, ' ')}</span>
+                  <div className="complexity-bar">
+                    <div
+                      className={`complexity-fill ${t.mastery_level >= 0.7 ? 'advanced' : t.mastery_level >= 0.4 ? 'intermediate' : 'beginner'}`}
+                      style={{ width: `${(t.mastery_level * 100).toFixed(0)}%` }}
+                    ></div>
+                  </div>
+                  <span className="complexity-value">{(t.mastery_level * 100).toFixed(0)}% ({t.interactions})</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Strong & Weak Topics */}
         <div className="analytics-topics-row">
           <div className="analytics-section glass-effect">
             <h3> Strong Topics</h3>
             <div className="topic-tags">
-              {(profile.strong_topics || []).length > 0
-                ? profile.strong_topics.slice(0, 8).map((t) => <span key={t} className="topic-tag strong">✅ {t.replace(/_/g, ' ')}</span>)
+              {(summary.strong_topics || []).length > 0
+                ? summary.strong_topics.slice(0, 8).map((t) => <span key={t} className="topic-tag strong">✅ {t.replace(/_/g, ' ')}</span>)
                 : <span className="analytics-empty">No mastered topics yet. Keep learning!</span>}
             </div>
           </div>
           <div className="analytics-section glass-effect">
             <h3> Topics in Progress</h3>
             <div className="topic-tags">
-              {(profile.weak_topics || []).length > 0
-                ? profile.weak_topics.slice(0, 8).map((t) => <span key={t} className="topic-tag weak">📚 {t.replace(/_/g, ' ')}</span>)
+              {(summary.weak_topics || []).length > 0
+                ? summary.weak_topics.slice(0, 8).map((t) => <span key={t} className="topic-tag weak">📚 {t.replace(/_/g, ' ')}</span>)
                 : <span className="analytics-empty">No topics in progress yet</span>}
             </div>
           </div>
@@ -106,13 +176,13 @@ export default function Analytics() {
         <div className="analytics-section glass-effect">
           <h3> Misconceptions</h3>
           <div className="topic-tags">
-            {(() => {
-              const misc = profile.misconceptions || {};
-              const active = Object.entries(misc).filter(([, v]) => v && !v.corrected);
-              return active.length > 0
-                ? active.slice(0, 6).map(([t]) => <span key={t} className="topic-tag misconception">🚨 {t.replace(/_/g, ' ')}</span>)
-                : <span className="analytics-empty"> No misconceptions detected</span>;
-            })()}
+            {activeMisc.length > 0
+              ? activeMisc.slice(0, 6).map((m) => (
+                  <span key={m.topic} className="topic-tag misconception" title={m.detail}>
+                    🚨 {m.topic.replace(/_/g, ' ')} ({m.count})
+                  </span>
+                ))
+              : <span className="analytics-empty"> No misconceptions detected</span>}
           </div>
         </div>
 
