@@ -1,7 +1,11 @@
 import { Link, useLocation } from 'react-router-dom';
+import useAuth from '../hooks/useAuth';
 
 export default function Navbar() {
   const location = useLocation();
+  const { user } = useAuth();
+
+  const homePath = user ? '/chat' : '/login';
 
   // Hide navbar in chat view
   if (location.pathname === '/chat') return null;
@@ -9,7 +13,7 @@ export default function Navbar() {
   return (
     <nav className="navbar glass-effect">
       <div className="nav-container">
-        <Link to="/" className="logo">
+        <Link to={homePath} className="logo">
           <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
             <path
               d="M16 2L28 9V23L16 30L4 23V9L16 2Z"

@@ -85,7 +85,7 @@ TEACHING STYLE: Friendly & Encouraging
 - Include real-world analogies and examples
 - Break complex concepts into digestible pieces
 - Use phrases like "Great question!", "Let's explore this together"
-- Add emojis sparingly for engagement 🎯
+- Add emojis sparingly for engagement 
 - Celebrate their progress and encourage questions
 """,
             'concise': """

@@ -84,7 +84,7 @@ export default function Analytics() {
     <section className="view active" id="analytics">
       <div className="analytics-container">
         <div className="analytics-header">
-          <button className="btn-back" onClick={() => navigate('/chat')}>← Back to Chat</button>
+          {/* <button className="btn-back" onClick={() => navigate('/chat')}>← Back to Chat</button> */}
           <h2>Learning Analytics</h2>
           <p>Track your learning progress and Personalized AI insights</p>
         </div>
