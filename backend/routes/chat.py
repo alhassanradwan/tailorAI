@@ -10,6 +10,7 @@ from models.user import User
 from services.ai_agents import AIService
 from services.agent_router import DeepAgentRouter
 from services.knowledge_state import KnowledgeStateService
+from services.adaptive_mode_service import AdaptiveModeService
 from database import Database
 from datetime import datetime
 import os
@@ -49,6 +50,15 @@ def send_message():
     )
     
     if result.get('success'):
+        mode, reason = AdaptiveModeService.decide_mode(
+            learner_level=(profile or {}).get('skill_level') or (profile or {}).get('python'),
+            uncertainty_markers=0,
+            misconception_detected=False,
+            emotional_state='neutral',
+            low_mastery_detected=False,
+            user_preference=((profile or {}).get('conversation_preferences') or {}).get('adaptive_preference'),
+        )
+
         # Store interaction in database if user is logged in
         if user_id:
             try:
@@ -58,6 +68,8 @@ def send_message():
                     "message": message,
                     "response": result['response'],
                     "agent": result['agent'],
+                    "tutoring_mode": mode,
+                    "mode_reason": reason,
                     "tokens_used": result.get('tokens_used', 0),
                     "timestamp": datetime.utcnow().isoformat()
                 })
@@ -68,7 +80,9 @@ def send_message():
             "success": True,
             "response": result['response'],
             "agent": result['agent'],
-            "agent_name": result['agent'].replace('_', ' ').title()
+            "agent_name": result['agent'].replace('_', ' ').title(),
+            "mode": mode,
+            "reason": reason,
         }), 200
     else:
         return jsonify({
@@ -158,6 +172,21 @@ def chat_groq():
             return jsonify({"success": False, "error": result.get('error', 'Unknown error')}), 500
 
         analysis = result.get('analysis', {})
+        recs = analysis.get('recommendations', {})
+
+        mode = result.get('tutoring_mode')
+        reason = result.get('mode_reason')
+        if not mode:
+            mode, reason = AdaptiveModeService.decide_mode(
+                learner_level=ks.get('skill_level', 'intermediate'),
+                uncertainty_markers=analysis.get('message_analysis', {}).get('uncertainty_markers', 0),
+                misconception_detected=recs.get('misconception_detected', False),
+                emotional_state=recs.get('emotional_state', 'neutral'),
+                low_mastery_detected=False,
+                user_preference=ks.get('conversation_preferences', {}).get('adaptive_preference'),
+            )
+        recs['tutoring_mode'] = mode
+        recs['mode_reason'] = reason
 
         # 3. Update knowledge state from analysis (server-side analytics)
         try:
@@ -181,7 +210,11 @@ def chat_groq():
                     "complexity": analysis.get('complexity', 'intermediate'),
                     "question_type": analysis.get('question_type', 'general'),
                     "method": analysis.get('analysis_method', 'keywords'),
+                    "mode": mode,
+                    "mode_reason": reason,
                 },
+                "tutoring_mode": mode,
+                "mode_reason": reason,
                 "timestamp": datetime.utcnow().isoformat(),
             })
         except Exception as e:
@@ -198,6 +231,13 @@ def chat_groq():
             logger.warning("Failed to update user stats: %s", e)
 
         # 6. Return response + lightweight metadata
+        logger.debug(
+            "chat_groq return mode=%s reason=%s analysis_mode=%s",
+            mode,
+            reason,
+            analysis.get('recommendations', {}).get('tutoring_mode'),
+        )
+
         return jsonify({
             "success": True,
             "response": result['response'],
@@ -205,10 +245,14 @@ def chat_groq():
             "agent": result['agent'],
             "agent_name": result.get('agent_name', ''),
             "tokens_used": result.get('tokens_used', 0),
+            "mode": mode,
+            "reason": reason,
             "analysis": {
                 "topics": analysis.get('topics', []),
                 "complexity": analysis.get('complexity'),
                 "question_type": analysis.get('question_type'),
+                "mode": mode,
+                "mode_reason": reason,
             },
         }), 200
 

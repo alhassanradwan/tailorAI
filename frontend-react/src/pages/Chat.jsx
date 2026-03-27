@@ -3,6 +3,7 @@
 
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import useAuth from '../hooks/useAuth';
 import api from '../api/axios';
 import Sidebar from '../components/Sidebar';
@@ -18,11 +19,14 @@ const STORAGE_PREFIX = 'adaptiveai';
 const profilePicKey = (userKey) => `${STORAGE_PREFIX}:${userKey}:profilePic`;
 
 export default function Chat() {
+  const { t } = useTranslation();
   const { user, profile, setProfile, chatMessages, setChatMessages, saveContext, selectedTone } = useAuth();
 
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [currentSession, setCurrentSession] = useState(null);
+  const [activeMode, setActiveMode] = useState('direct');
+  const [modeReason, setModeReason] = useState('stable understanding detected');
 
   // ✅ One state controls sidebar + overlay + chat layout
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -137,6 +141,8 @@ export default function Chat() {
         const aiText = `Your name is **${myName}**.`;
         const aiBubble = { role: 'agent', content: aiText, timestamp: Date.now() };
         setChatMessages((prev) => [...prev, aiBubble]);
+        setActiveMode('direct');
+        setModeReason('identity lookup request');
 
         ChatHistory.addMessage(userKey, session.id, {
           text: aiText,
@@ -195,6 +201,9 @@ export default function Chat() {
         const aiMsg = { role: 'agent', content: data.response, timestamp: Date.now() };
         setChatMessages((prev) => [...prev, aiMsg]);
 
+        if (data.mode) setActiveMode(data.mode);
+        if (data.reason) setModeReason(data.reason);
+
         ChatHistory.addMessage(userKey, session.id, { text: data.response, sender: 'agent', timestamp: new Date().toISOString() });
 
         // Analytics are now handled server-side automatically
@@ -227,6 +236,15 @@ export default function Chat() {
 
   const profileTone = profile?.tone || profile?.preferences?.learning_style || 'Friendly';
 
+  const prettyMode = activeMode
+    .split('_')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+
+  useEffect(() => {
+    console.debug('[Chat badge mode]', { activeMode, modeReason });
+  }, [activeMode, modeReason]);
+
   return (
     <div className={`chat-view-with-sidebar ${sidebarOpen ? '' : 'sidebar-collapsed'}`}>
       <Sidebar
@@ -244,7 +262,7 @@ export default function Chat() {
             <button
               className="sidebar-open-btn"
               onClick={() => setSidebarOpen(true)}
-              aria-label="Open sidebar"
+              aria-label={t('chat.openSidebar')}
               type="button"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -256,11 +274,12 @@ export default function Chat() {
           )}
 
           <div className="chat-header-info">
-            <h3 id="studentNameDisplay">{user?.name || profile?.name || 'Student'}</h3>
+            <h3 id="studentNameDisplay">{user?.name || profile?.name || t('common.student')}</h3>
             <div className="chat-header-stats">
               <span className="stat-chip">{profileScore}</span>
               <span className="stat-chip">{profileStrongest}</span>
               <span className="stat-chip">{profileTone}</span>
+              <span className="stat-chip" title={modeReason}>{t('chat.modeLabel')}: {prettyMode}</span>
             </div>
           </div>
         </div>
@@ -280,8 +299,8 @@ export default function Chat() {
                   </defs>
                 </svg>
               </div>
-              <h3>Welcome, {user?.name || 'Student'}!</h3>
-              <p>I'm your Personalized AI tutor. Ask me anything about Data Science, Machine Learning, or Deep Learning.</p>
+              <h3>{t('chat.welcomeTitle', { name: user?.name || t('common.student') })}</h3>
+              <p>{t('chat.welcomeSubtitle')}</p>
             </div>
           )}
 
@@ -296,7 +315,7 @@ export default function Chat() {
               </div>
               <div className="message-enhanced-wrapper">
                 <div className="message-enhanced-content loading-message">
-                  <img src="/favicon.svg" className="loading-icon" alt="Loading..." />
+                  <img src="/favicon.svg" className="loading-icon" alt={t('chat.typingAlt')} />
                 </div>
               </div>
             </div>
@@ -327,7 +346,7 @@ export default function Chat() {
               e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Just ask..."
+            placeholder={t('chat.inputPlaceholder')}
             rows={1}
           />
           <button type="submit" className="chat-send-btn" disabled={!input.trim() || isTyping}>

@@ -11,6 +11,7 @@ from routes.chat import chat_bp
 from routes.analytics import analytics_bp
 from routes.context import context_bp
 from routes.adaptive import adaptive_bp
+from routes.admin import admin_bp
 
 # ── Logging ─────────────────────────────────────────────────
 log_level = logging.DEBUG if Config.DEBUG else logging.INFO
@@ -56,6 +57,7 @@ app.register_blueprint(chat_bp, url_prefix='/api/chat')
 app.register_blueprint(analytics_bp, url_prefix='/api/analytics')
 app.register_blueprint(context_bp, url_prefix='/api/context')
 app.register_blueprint(adaptive_bp, url_prefix='/api/adaptive')
+app.register_blueprint(admin_bp, url_prefix='/api/admin')
 
 
 # ── Health & root ───────────────────────────────────────────

@@ -9,6 +9,7 @@ Phase 4: Advanced Features (Knowledge state, misconceptions, Socratic mode)
 from flask import Blueprint, request, jsonify
 from database import Database
 from datetime import datetime
+from services.adaptive_mode_service import AdaptiveModeService
 import os
 import re
 import json
@@ -294,6 +295,8 @@ def build_recommendations(topics, complexity, question_type, profile, analysis_m
         'misconception_detected': False,
         'misconception_topic': None,
         'comprehension_check_topic': None,
+        'tutoring_mode': 'direct',
+        'mode_reason': 'stable understanding detected',
     }
     
     strong = profile.get('strong_topics', [])
@@ -353,6 +356,27 @@ def build_recommendations(topics, complexity, question_type, profile, analysis_m
     check_topic = should_trigger_comprehension_check(profile)
     if check_topic:
         recommendations['comprehension_check_topic'] = check_topic
+
+    # Centralized tutoring mode decision
+    low_mastery = False
+    for topic in topics:
+        topic_data = topics_discussed.get(topic, {})
+        if isinstance(topic_data, dict) and topic_data.get('count', 0) >= 2:
+            if calculate_mastery_score(topic_data) < 0.45:
+                low_mastery = True
+                break
+
+    mode, reason = AdaptiveModeService.decide_mode(
+        learner_level=profile.get('skill_level', profile.get('python', 'intermediate')),
+        uncertainty_markers=analysis_meta.get('uncertainty_markers', 0),
+        misconception_detected=recommendations.get('misconception_detected', False),
+        emotional_state=recommendations.get('emotional_state', 'neutral'),
+        low_mastery_detected=low_mastery,
+        user_preference=profile.get('conversation_preferences', {}).get('adaptive_preference'),
+    )
+    recommendations['tutoring_mode'] = mode
+    recommendations['mode_reason'] = reason
+    recommendations['trigger_socratic_mode'] = AdaptiveModeService.is_socratic(mode)
     
     return recommendations
 
@@ -419,6 +443,19 @@ def analyze_conversation():
             recommendations['misconception_detected'] = True
             recommendations['misconception_detail'] = llm_data.get('misconception_detail')
             recommendations['trigger_socratic_mode'] = True
+
+        # Re-evaluate mode after LLM signals are merged.
+        mode, reason = AdaptiveModeService.decide_mode(
+            learner_level=profile.get('skill_level', profile.get('python', 'intermediate')),
+            uncertainty_markers=analysis_meta.get('uncertainty_markers', 0),
+            misconception_detected=recommendations.get('misconception_detected', False),
+            emotional_state=recommendations.get('emotional_state', 'neutral'),
+            low_mastery_detected=False,
+            user_preference=profile.get('conversation_preferences', {}).get('adaptive_preference'),
+        )
+        recommendations['tutoring_mode'] = mode
+        recommendations['mode_reason'] = reason
+        recommendations['trigger_socratic_mode'] = AdaptiveModeService.is_socratic(mode)
     
     return jsonify({
         'success': True,

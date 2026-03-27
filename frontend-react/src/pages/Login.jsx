@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import useAuth from '../hooks/useAuth';
 
 export default function Login() {
+  const { t } = useTranslation();
   const [tab, setTab] = useState('login'); // 'login' | 'signup'
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -17,14 +19,14 @@ export default function Login() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    if (!loginEmail || !loginPassword) return setError('Please enter both email and password');
+    if (!loginEmail || !loginPassword) return setError(t('login.errors.missingLogin'));
     setError('');
     setLoading(true);
     try {
       await login(loginEmail, loginPassword);
       navigate('/chat');
     } catch (err) {
-      setError(err.response?.data?.error || err.message || 'Login failed');
+      setError(err.response?.data?.error || err.message || t('login.errors.loginFailed'));
     } finally {
       setLoading(false);
     }
@@ -32,16 +34,16 @@ export default function Login() {
 
   const handleSignup = async (e) => {
     e.preventDefault();
-    if (!signupName || !signupEmail || !signupPassword || !signupConfirm) return setError('Please fill in all fields');
-    if (signupPassword !== signupConfirm) return setError('Passwords do not match');
-    if (signupPassword.length < 6) return setError('Password must be at least 6 characters');
+    if (!signupName || !signupEmail || !signupPassword || !signupConfirm) return setError(t('login.errors.missingSignup'));
+    if (signupPassword !== signupConfirm) return setError(t('login.errors.passwordMismatch'));
+    if (signupPassword.length < 6) return setError(t('login.errors.passwordShort'));
     setError('');
     setLoading(true);
     try {
       await signup(signupName, signupEmail, signupPassword);
       navigate('/onboarding');
     } catch (err) {
-      setError(err.response?.data?.error || err.message || 'Signup failed');
+      setError(err.response?.data?.error || err.message || t('login.errors.signupFailed'));
     } finally {
       setLoading(false);
     }
@@ -55,16 +57,16 @@ export default function Login() {
             <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z" />
             <path d="M8.93 6.588l-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533L8.93 6.588zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0z" />
           </svg>
-          <span> Multi-Agent Intelligence • Built for Modern Learners</span>
+          <span> {t('login.badge')}</span>
         </div>
 
         <h1 className="hero-title">
-          Stop Learning the Hard Way.<br />
-          <span className="gradient-text">Let AI Personalize to You</span>
+          {t('login.titleLine1')}<br />
+          <span className="gradient-text">{t('login.titleLine2')}</span>
         </h1>
 
         <p className="hero-subtitle">
-          Traditional courses teach everyone the same way. TailorAI analyzes how YOU learn best, then personalizes every question, explanation, and challenge to match your skill level, learning style, and goals. Four specialized AI agents work together to accelerate your mastery of Data Science, ML, and Deep Learning.
+          {t('login.subtitle')}
         </p>
 
         <div className="auth-card glass-effect">
@@ -74,14 +76,14 @@ export default function Login() {
               onClick={() => { setTab('login'); setError(''); }}
               type="button"
             >
-              Login
+              {t('login.tabLogin')}
             </button>
             <button
               className={`auth-tab ${tab === 'signup' ? 'active' : ''}`}
               onClick={() => { setTab('signup'); setError(''); }}
               type="button"
             >
-              Sign Up
+              {t('login.tabSignup')}
             </button>
           </div>
 
@@ -97,23 +99,23 @@ export default function Login() {
           {tab === 'login' ? (
             <form onSubmit={handleLogin}>
               <div className="form-group">
-                <label>Email</label>
+                <label>{t('login.email')}</label>
                 <input
                   type="email"
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
-                  placeholder="you@example.com"
+                  placeholder={t('login.placeholders.email')}
                   required
                 />
               </div>
 
               <div className="form-group">
-                <label>Password</label>
+                <label>{t('login.password')}</label>
                 <input
                   type="password"
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
-                  placeholder="Enter your password"
+                  placeholder={t('login.placeholders.password')}
                   required
                 />
               </div>
@@ -121,33 +123,33 @@ export default function Login() {
               <button type="submit" className="btn-primary btn-full" disabled={loading}>
                 {loading ? (
                   <>
-                    <span className="btn-spinner"></span> Logging in...
+                    <span className="btn-spinner"></span> {t('login.loggingIn')}
                   </>
                 ) : (
-                  'Login'
+                  t('login.loginButton')
                 )}
               </button>
             </form>
           ) : (
             <form onSubmit={handleSignup}>
               <div className="form-group">
-                <label>Full Name</label>
+                <label>{t('login.fullName')}</label>
                 <input
                   type="text"
                   value={signupName}
                   onChange={(e) => setSignupName(e.target.value)}
-                  placeholder="John Doe"
+                  placeholder={t('login.placeholders.name')}
                   required
                 />
               </div>
 
               <div className="form-group">
-                <label>Email</label>
+                <label>{t('login.email')}</label>
                 <input
                   type="email"
                   value={signupEmail}
                   onChange={(e) => setSignupEmail(e.target.value)}
-                  placeholder="you@example.com"
+                  placeholder={t('login.placeholders.email')}
                   required
                 />
               </div>
@@ -155,23 +157,23 @@ export default function Login() {
               {/* UPDATED: Password + Confirm side-by-side */}
               <div className="form-row">
                 <div className="form-group">
-                  <label>Password</label>
+                  <label>{t('login.password')}</label>
                   <input
                     type="password"
                     value={signupPassword}
                     onChange={(e) => setSignupPassword(e.target.value)}
-                    placeholder="Min 6 characters"
+                    placeholder={t('login.placeholders.passwordMin')}
                     required
                   />
                 </div>
 
                 <div className="form-group">
-                  <label>Confirm Password</label>
+                  <label>{t('login.confirmPassword')}</label>
                   <input
                     type="password"
                     value={signupConfirm}
                     onChange={(e) => setSignupConfirm(e.target.value)}
-                    placeholder="Repeat password"
+                    placeholder={t('login.placeholders.confirmPassword')}
                     required
                   />
                 </div>
@@ -180,10 +182,10 @@ export default function Login() {
               <button type="submit" className="btn-primary btn-full" disabled={loading}>
                 {loading ? (
                   <>
-                    <span className="btn-spinner"></span> Creating account...
+                    <span className="btn-spinner"></span> {t('login.creatingAccount')}
                   </>
                 ) : (
-                  'Create Account'
+                  t('login.signupButton')
                 )}
               </button>
             </form>

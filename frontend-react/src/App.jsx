@@ -2,12 +2,14 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider } from './context/AuthContext';
 import useAuth from './hooks/useAuth';
 import ProtectedRoute from './components/ProtectedRoute';
+import AdminRoute from './components/AdminRoute';
 import Navbar from './components/Navbar';
 import SpaceBackground from './components/SpaceBackground';
 import Login from './pages/Login';
 import Onboarding from './pages/Onboarding';
 import Chat from './pages/Chat';
 import Analytics from './pages/Analytics';
+import Admin from './pages/Admin';
 import Features from './pages/Features';
 import About from './pages/About';
 import './index.css';
@@ -64,6 +66,9 @@ function AppRoutes() {
         } />
         <Route path="/analytics" element={
           <ProtectedRoute><div className="container"><Analytics /></div></ProtectedRoute>
+        } />
+        <Route path="/admin" element={
+          <AdminRoute><div className="container"><Admin /></div></AdminRoute>
         } />
 
         {/* Default redirect */}

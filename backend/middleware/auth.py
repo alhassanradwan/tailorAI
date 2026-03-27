@@ -7,7 +7,6 @@ from functools import wraps
 from flask import jsonify
 from flask_jwt_extended import verify_jwt_in_request, get_jwt_identity, get_jwt
 from database import Database
-from config import Config
 
 def token_required(fn):
     """Decorator to require valid JWT token"""
@@ -45,5 +44,7 @@ def get_current_user():
         return None
 
 def is_admin_user(email):
-    """Check if email is admin"""
-    return email == Config.ADMIN_EMAIL
+    """Check admin flag from database for a given email."""
+    users = Database.get_collection('users')
+    user = users.find_one({'email': email}, {'_id': 0, 'is_admin': 1})
+    return bool((user or {}).get('is_admin', False))

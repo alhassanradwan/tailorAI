@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import useAuth from '../hooks/useAuth';
 import { ChatHistory, formatTimestamp } from '../utils/helpers';
 
@@ -15,6 +16,7 @@ export default function Sidebar({
   sidebarOpen,
   setSidebarOpen,
 }) {
+  const { t, i18n } = useTranslation();
   const { user, logout, loading } = useAuth();
   const navigate = useNavigate();
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -70,8 +72,8 @@ export default function Sidebar({
   const handleProfilePicUpload = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith('image/')) return alert('Please select a valid image file');
-    if (file.size > 2 * 1024 * 1024) return alert('Image must be less than 2MB');
+    if (!file.type.startsWith('image/')) return alert(t('sidebar.alerts.invalidImageType'));
+    if (file.size > 2 * 1024 * 1024) return alert(t('sidebar.alerts.imageTooLarge'));
 
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -82,7 +84,7 @@ export default function Sidebar({
     reader.readAsDataURL(file);
   };
 
-  const displayName = loading ? 'Loading...' : (user?.name || user?.email?.split('@')[0] || 'User');
+  const displayName = loading ? t('common.loading') : (user?.name || user?.email?.split('@')[0] || t('sidebar.userFallback'));
 
   // const closeSidebar = () => setSidebarOpen(false);
   const toggleSidebar = () => setSidebarOpen((v) => !v);
@@ -113,7 +115,7 @@ export default function Sidebar({
           </div>
 
           {/* Toggle INSIDE sidebar */}
-          <button className="sidebar-toggle" onClick={toggleSidebar} aria-label="Toggle sidebar">
+          <button className="sidebar-toggle" onClick={toggleSidebar} aria-label={t('sidebar.toggle')}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="3" y1="6" x2="21" y2="6" />
               <line x1="3" y1="12" x2="21" y2="12" />
@@ -127,14 +129,14 @@ export default function Sidebar({
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
-          New Chat
+          {t('sidebar.newChat')}
         </button>
 
         <div className="sidebar-history">
           <div id="chatHistoryContainer">
             {grouped.today.length > 0 && (
               <div className="history-group">
-                <div className="history-group-label">Today</div>
+                <div className="history-group-label">{t('sidebar.today')}</div>
                 <div className="history-items">
                   {grouped.today.map((session) => (
                     <ChatHistoryItem
@@ -147,6 +149,7 @@ export default function Sidebar({
                         ChatHistory.renameSession(userKey, session.id, newTitle);
                         refreshHistory();
                       }}
+                      i18nLang={i18n.resolvedLanguage || i18n.language || 'en'}
                     />
                   ))}
                 </div>
@@ -155,7 +158,7 @@ export default function Sidebar({
 
             {grouped.last30Days.length > 0 && (
               <div className="history-group">
-                <div className="history-group-label">Last 30 Days</div>
+                <div className="history-group-label">{t('sidebar.last30Days')}</div>
                 <div className="history-items">
                   {grouped.last30Days.map((session) => (
                     <ChatHistoryItem
@@ -168,6 +171,7 @@ export default function Sidebar({
                         ChatHistory.renameSession(userKey, session.id, newTitle);
                         refreshHistory();
                       }}
+                      i18nLang={i18n.resolvedLanguage || i18n.language || 'en'}
                     />
                   ))}
                 </div>
@@ -179,7 +183,7 @@ export default function Sidebar({
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                 </svg>
-                <p>No chat history yet.<br />Start a conversation!</p>
+                <p>{t('sidebar.noHistory')}<br />{t('sidebar.startConversation')}</p>
               </div>
             )}
           </div>
@@ -219,14 +223,14 @@ export default function Sidebar({
           {dropdownOpen && (
             <div className="user-dropdown active" id="userDropdown">
               <button className="dropdown-item" onClick={() => fileInputRef.current?.click()}>
-                Change Photo
+                {t('sidebar.changePhoto')}
               </button>
               <button className="dropdown-item" onClick={() => { navigate('/analytics'); setDropdownOpen(false); }}>
-                Analytics
+                {t('sidebar.analytics')}
               </button>
               <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '0.25rem 0' }} />
               <button className="dropdown-item logout" onClick={handleLogout}>
-                Logout
+                {t('sidebar.logout')}
               </button>
             </div>
           )}
@@ -244,7 +248,8 @@ export default function Sidebar({
   );
 }
 
-function ChatHistoryItem({ session, isActive, onLoad, onDelete, onRename }) {
+function ChatHistoryItem({ session, isActive, onLoad, onDelete, onRename, i18nLang }) {
+  const { t } = useTranslation();
   const [isEditing, setIsEditing] = useState(false);
   const [editedTitle, setEditedTitle] = useState(session.title);
 
@@ -291,14 +296,16 @@ function ChatHistoryItem({ session, isActive, onLoad, onDelete, onRename }) {
             autoFocus
           />
         ) : (
-          <div className="history-item-title">{session.title}</div>
+          <div className="history-item-title">{session.title === 'New Chat' ? t('sidebar.newChat') : session.title}</div>
         )}
-        <div className="history-item-meta">{session.messageCount} messages • {formatTimestamp(session.timestamp)}</div>
+        <div className="history-item-meta">
+          {session.messageCount} {t('sidebar.messages')} • {formatTimestamp(session.timestamp, { locale: i18nLang })}
+        </div>
       </div>
 
       <div className="history-item-actions">
         {!isEditing && (
-          <button className="history-item-rename" onClick={handleRename} title="Rename">
+          <button className="history-item-rename" onClick={handleRename} title={t('sidebar.rename')}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
@@ -306,7 +313,7 @@ function ChatHistoryItem({ session, isActive, onLoad, onDelete, onRename }) {
           </button>
         )}
 
-        <button className="history-item-delete" onClick={onDelete} title="Delete">
+        <button className="history-item-delete" onClick={onDelete} title={t('sidebar.delete')}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
           </svg>

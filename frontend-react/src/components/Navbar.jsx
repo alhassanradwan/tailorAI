@@ -1,9 +1,12 @@
 import { Link, useLocation } from 'react-router-dom';
 import useAuth from '../hooks/useAuth';
+import { useTranslation } from 'react-i18next';
+import LanguageSwitcher from './LanguageSwitcher';
 
 export default function Navbar() {
   const location = useLocation();
   const { user } = useAuth();
+  const { t } = useTranslation();
 
   const homePath = user ? '/chat' : '/login';
 
@@ -35,8 +38,10 @@ export default function Navbar() {
         </Link>
 
         <div className="nav-links">
-          <Link to="/features">Features</Link>
-          <Link to="/about">About</Link>
+          <Link to="/features">{t('navbar.features')}</Link>
+          <Link to="/about">{t('navbar.about')}</Link>
+          {user?.isAdmin && <Link to="/admin">{t('navbar.admin')}</Link>}
+          <LanguageSwitcher />
         </div>
       </div>
     </nav>

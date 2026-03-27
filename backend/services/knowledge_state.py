@@ -38,22 +38,24 @@ def _ensure_defaults(doc):
     for k, v in DEFAULT_BEHAVIORAL.items():
         doc['behavioral'].setdefault(k, v if not isinstance(v, dict) else {**v})
     doc.setdefault('misconceptions', {})
-    doc.setdefault('current_adaptations', {
-        'socratic_mode': False,
-        'emotional_state': 'neutral',
-        'suggested_approach': 'explain_simply',
-        'comprehension_check': None,
-    })
+    doc.setdefault('current_adaptations', {})
+    doc['current_adaptations'].setdefault('tutoring_mode', 'direct')
+    doc['current_adaptations'].setdefault('mode_reason', 'stable understanding detected')
+    doc['current_adaptations'].setdefault('socratic_mode', False)
+    doc['current_adaptations'].setdefault('emotional_state', 'neutral')
+    doc['current_adaptations'].setdefault('suggested_approach', 'explain_simply')
+    doc['current_adaptations'].setdefault('comprehension_check', None)
+    doc.setdefault('mode_history', [])
     doc.setdefault('strong_topics', [])
     doc.setdefault('weak_topics', [])
-    doc.setdefault('conversation_preferences', {
-        'explanation_style': '',
-        'prefers_examples': False,
-        'prefers_code': False,
-        'prefers_analogies': False,
-        'preferred_tone': '',
-        'preferred_length': '',
-    })
+    doc.setdefault('conversation_preferences', {})
+    doc['conversation_preferences'].setdefault('explanation_style', '')
+    doc['conversation_preferences'].setdefault('prefers_examples', False)
+    doc['conversation_preferences'].setdefault('prefers_code', False)
+    doc['conversation_preferences'].setdefault('prefers_analogies', False)
+    doc['conversation_preferences'].setdefault('preferred_tone', '')
+    doc['conversation_preferences'].setdefault('preferred_length', '')
+    doc['conversation_preferences'].setdefault('adaptive_preference', '')
     return doc
 
 
@@ -116,6 +118,8 @@ class KnowledgeStateService:
         qtype = analysis.get('question_type', 'general')
         meta = analysis.get('message_analysis', {})
         recs = analysis.get('recommendations', {})
+        mode = recs.get('tutoring_mode', 'direct')
+        mode_reason = recs.get('mode_reason', 'stable understanding detected')
 
         # 1) question type counter
         if qtype in ba['question_types']:
@@ -215,11 +219,21 @@ class KnowledgeStateService:
 
         # 9) adaptations
         ks['current_adaptations'] = {
+            'tutoring_mode': mode,
+            'mode_reason': mode_reason,
             'socratic_mode': recs.get('trigger_socratic_mode', False),
             'emotional_state': recs.get('emotional_state', 'neutral'),
             'suggested_approach': recs.get('suggested_approach', 'explain_simply'),
             'comprehension_check': recs.get('comprehension_check_topic'),
         }
+
+        mode_history = ks.get('mode_history', [])
+        mode_history.append({
+            'mode': mode,
+            'reason': mode_reason,
+            'timestamp': now_iso,
+        })
+        ks['mode_history'] = mode_history[-100:]
 
         # 10) conversation preferences (keyword sniff)
         msg_lower = message_text.lower()

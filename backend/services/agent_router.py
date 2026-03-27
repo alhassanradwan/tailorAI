@@ -17,6 +17,10 @@ import time
 import logging
 from datetime import datetime
 from groq import Groq
+from config import Config
+from services.adaptive_mode_service import AdaptiveModeService
+from services.langchain_analyzer import LangChainAnalyzer
+from services.langchain_generator import LangChainGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +134,7 @@ _QUESTION_TYPE_PATTERNS = {
     'why': r'\b(why does|why do|why is|reason|cause|purpose of)\b',
     'comparison': r'\b(difference|compare|vs\.?|versus|better|which one|pros and cons)\b',
     'debugging': r'\b(error|bug|fix|issue|doesn\'?t work|wrong|fail|crash|exception)\b',
-    'code_request': r'\b(write|code|implement|script|program|function|show me|example code)\b',
+    'code_request': r'\b(write|code|coding|implement|script|program|function|show me|example code|code example|coding example|snippet|sample code|hello world|boilerplate)\b',
 }
 
 _MISCONCEPTION_INDICATORS = [
@@ -199,6 +203,8 @@ def _build_recommendations(topics, complexity, qtype, ks, meta):
         'comprehension_check_topic': None,
         'emotional_state': 'neutral',
         'suggested_approach': 'explain_simply',
+        'tutoring_mode': 'direct',
+        'mode_reason': 'stable understanding detected',
     }
 
     strong = ks.get('strong_topics', [])
@@ -248,6 +254,38 @@ def _build_recommendations(topics, complexity, qtype, ks, meta):
             recs['comprehension_check_topic'] = t
             break
 
+    # Initial mode selection; final pass happens in analyze() after LLM merge.
+    low_mastery = AdaptiveModeService.has_low_mastery(topics_map, topics)
+    mode, reason = AdaptiveModeService.decide_mode(
+        learner_level=ks.get('skill_level', 'intermediate'),
+        uncertainty_markers=meta.get('uncertainty_markers', 0),
+        misconception_detected=recs.get('misconception_detected', False),
+        emotional_state=recs.get('emotional_state', 'neutral'),
+        low_mastery_detected=low_mastery,
+        user_preference=ks.get('conversation_preferences', {}).get('adaptive_preference'),
+    )
+    recs['tutoring_mode'] = mode
+    recs['mode_reason'] = reason
+    recs['trigger_socratic_mode'] = AdaptiveModeService.is_socratic(mode)
+
+    return recs
+
+
+def _finalize_tutoring_mode(recs, knowledge_state, topics, meta):
+    """Finalize tutoring mode after LLM enrichment and heuristics merge."""
+    topics_map = knowledge_state.get('topics', {})
+    low_mastery = AdaptiveModeService.has_low_mastery(topics_map, topics)
+    mode, reason = AdaptiveModeService.decide_mode(
+        learner_level=knowledge_state.get('skill_level', 'intermediate'),
+        uncertainty_markers=meta.get('uncertainty_markers', 0),
+        misconception_detected=recs.get('misconception_detected', False),
+        emotional_state=recs.get('emotional_state', 'neutral'),
+        low_mastery_detected=low_mastery,
+        user_preference=knowledge_state.get('conversation_preferences', {}).get('adaptive_preference'),
+    )
+    recs['tutoring_mode'] = mode
+    recs['mode_reason'] = reason
+    recs['trigger_socratic_mode'] = AdaptiveModeService.is_socratic(mode)
     return recs
 
 
@@ -332,6 +370,8 @@ class DeepAgentRouter:
         complexity = complexity_kw
         qtype = qtype_kw
         llm_data = None
+        langchain_used = False
+        langchain_fallback_reason = None
 
         word_count = meta.get('word_count', 0)
         should_llm = (
@@ -340,7 +380,36 @@ class DeepAgentRouter:
             or len(meta.get('misconception_signals', [])) > 0
         )
 
-        if should_llm and client:
+        if should_llm and Config.USE_LANGCHAIN:
+            try:
+                lc_result = LangChainAnalyzer.analyze_message(
+                    user_message=message,
+                    keyword_topics=topics_kw,
+                    keyword_complexity=complexity_kw,
+                    keyword_question_type=qtype_kw,
+                    message_meta=meta,
+                    knowledge_state=knowledge_state,
+                )
+                if lc_result.get('used'):
+                    cues = lc_result['cues']
+                    langchain_used = True
+                    method = 'langchain_hybrid'
+                    llm_data = {
+                        'emotional_state': cues.emotional_state,
+                        'suggested_approach': cues.suggested_approach,
+                        'is_misconception': cues.misconception_detected,
+                        'misconception_detail': cues.misconception_detail,
+                    }
+                    topics = list(set(topics_kw + (cues.topics or [])))
+                    logger.info('analysis_path=langchain_hybrid')
+                else:
+                    langchain_fallback_reason = lc_result.get('error') or 'unknown'
+                    logger.info('analysis_path=fallback reason=%s', langchain_fallback_reason)
+            except Exception as e:
+                langchain_fallback_reason = 'invoke_failed'
+                logger.warning('LangChain analysis integration failed: %s', e)
+
+        if should_llm and client and not langchain_used:
             llm_result = _analyze_with_llm(client, message, knowledge_state)
             if llm_result:
                 method = 'hybrid'
@@ -359,6 +428,8 @@ class DeepAgentRouter:
                 recs['misconception_detail'] = llm_data.get('misconception_detail')
                 recs['trigger_socratic_mode'] = True
 
+        recs = _finalize_tutoring_mode(recs, knowledge_state, topics, meta)
+
         return {
             'topics': topics,
             'complexity': complexity,
@@ -367,11 +438,22 @@ class DeepAgentRouter:
             'message_analysis': meta,
             'recommendations': recs,
             'confidence': 0.9 if method == 'hybrid' else 0.7,
+            'langchain': {
+                'used': langchain_used,
+                'fallback_reason': langchain_fallback_reason,
+            },
         }
 
     # ── system prompt builder ───────────────────────────────
     @staticmethod
-    def build_system_prompt(agent_key: str, profile: dict, knowledge_state: dict):
+    def build_system_prompt(
+        agent_key: str,
+        profile: dict,
+        knowledge_state: dict,
+        analysis: dict = None,
+        forced_mode: str = None,
+        forced_reason: str = None,
+    ):
         """
         Construct a fully-personalised system prompt merging:
         agent persona + learner profile + knowledge state + adaptations.
@@ -381,6 +463,7 @@ class DeepAgentRouter:
         ba = ks.get('behavioral', {})
         prefs = ks.get('conversation_preferences', {})
         adaptations = ks.get('current_adaptations', {})
+        analysis_recs = (analysis or {}).get('recommendations', {})
         topics_map = ks.get('topics', {})
         misconceptions = ks.get('misconceptions', {})
         strong = ks.get('strong_topics', [])
@@ -434,16 +517,21 @@ class DeepAgentRouter:
             length_inst = 'CRITICAL: Provide DETAILED responses. Go deep, cover edge cases.'
 
         # adaptation directives
-        adapt = []
-        if adaptations.get('socratic_mode'):
-            adapt.append("SOCRATIC MODE: Ask probing questions BEFORE explaining.")
+        active_mode = forced_mode or analysis_recs.get('tutoring_mode') or adaptations.get('tutoring_mode', 'direct')
+        mode_reason = forced_reason or analysis_recs.get('mode_reason') or adaptations.get('mode_reason', 'stable understanding detected')
+
+        adapt = [AdaptiveModeService.mode_prompt_instruction(active_mode)]
+        adapt.append(f"MODE REASON: {mode_reason}.")
+
+        if AdaptiveModeService.is_socratic(active_mode):
+            adapt.append("SOCRATIC SIGNAL: Ask probing questions before giving final direct answer.")
         emo = adaptations.get('emotional_state', 'neutral')
         if emo == 'frustrated':
             adapt.append("SUPPORT MODE: Be extra warm, break into tiny steps.")
         elif emo == 'curious':
             adapt.append("EXPLORATION MODE: Go deeper, share insights.")
         chk = adaptations.get('comprehension_check')
-        if chk:
+        if chk and AdaptiveModeService.is_socratic(active_mode):
             adapt.append(f"After answering, ask: 'Can you explain {chk} in your own words?'")
 
         learning_tone = profile.get('learning_tone', profile.get('tone', 'Friendly')).lower()
@@ -466,6 +554,7 @@ You are AdaptiveAI, an intelligent tutoring assistant that truly knows this stud
 Name: {name}
 Effective Skill Level: {effective_level} (from {total_q} analysed interactions)
 Learning Tone: {learning_tone}
+Tutoring Mode: {active_mode}
 Domain: {agent_cfg['label']}
 Conversations: {conversation_count}
 {'MASTERED: ' + ', '.join(strong) if strong else ''}
@@ -509,8 +598,26 @@ Conversations: {conversation_count}
         # 2. route
         agent_key = DeepAgentRouter.route(message, knowledge_state)
 
+        # Single source of truth for current response mode.
+        recs = analysis.get('recommendations', {})
+        response_mode = recs.get('tutoring_mode') or knowledge_state.get('current_adaptations', {}).get('tutoring_mode', 'direct')
+        response_reason = recs.get('mode_reason') or knowledge_state.get('current_adaptations', {}).get('mode_reason', 'stable understanding detected')
+        logger.debug(
+            "DeepAgentRouter.generate pre-prompt mode=%s reason=%s analysis_mode=%s",
+            response_mode,
+            response_reason,
+            recs.get('tutoring_mode'),
+        )
+
         # 3. build prompt
-        system_prompt = DeepAgentRouter.build_system_prompt(agent_key, profile, knowledge_state)
+        system_prompt = DeepAgentRouter.build_system_prompt(
+            agent_key,
+            profile,
+            knowledge_state,
+            analysis,
+            forced_mode=response_mode,
+            forced_reason=response_reason,
+        )
 
         # 4. build messages
         messages = [{'role': 'system', 'content': system_prompt}]
@@ -521,7 +628,55 @@ Conversations: {conversation_count}
             })
         messages.append({'role': 'user', 'content': message})
 
-        # 5. call Groq
+        # 5. LangChain path (feature-flagged) with strict fallback.
+        if Config.USE_LANGCHAIN:
+            try:
+                misconceptions = []
+                for topic, md in (knowledge_state.get('misconceptions', {}) or {}).items():
+                    if isinstance(md, dict) and not md.get('corrected'):
+                        detail = (md.get('detail') or '').strip()
+                        misconceptions.append(f"{topic}: {detail}" if detail else topic)
+
+                recent_context = ' | '.join(
+                    [f"{m.get('role', 'user')}: {m.get('content', '')}" for m in (chat_history or [])[-4:]]
+                )
+                topic_context = ', '.join(analysis.get('topics', [])) or 'general'
+
+                lc_result = LangChainGenerator.generate_response(
+                    tutoring_mode=response_mode,
+                    user_message=message,
+                    learner_level=knowledge_state.get('skill_level', profile.get('skill_level', 'intermediate')),
+                    strong_topics=knowledge_state.get('strong_topics', []),
+                    weak_topics=knowledge_state.get('weak_topics', []),
+                    misconceptions=misconceptions,
+                    recent_context=recent_context,
+                    topic_context=topic_context,
+                    question_type=analysis.get('question_type', 'general'),
+                    complexity=analysis.get('complexity', 'intermediate'),
+                    uncertainty_markers=(analysis.get('message_analysis', {}) or {}).get('uncertainty_markers', 0),
+                    has_code=(analysis.get('message_analysis', {}) or {}).get('has_code', False),
+                )
+
+                if lc_result.get('used') and lc_result.get('response'):
+                    elapsed = round((time.time() - t0) * 1000)
+                    logger.info('generation_path=langchain mode=%s', response_mode)
+                    return {
+                        'success': True,
+                        'response': lc_result['response'],
+                        'agent': agent_key,
+                        'agent_name': AGENTS[agent_key]['label'],
+                        'tokens_used': lc_result.get('tokens_used', 0),
+                        'response_time_ms': elapsed,
+                        'analysis': analysis,
+                        'tutoring_mode': response_mode,
+                        'mode_reason': response_reason,
+                    }
+
+                logger.info('generation_path=fallback reason=%s', lc_result.get('error', 'unknown'))
+            except Exception as e:
+                logger.warning('LangChain generation integration failed, using fallback: %s', e)
+
+        # 6. call Groq fallback path
         try:
             completion = client.chat.completions.create(
                 model='llama-3.3-70b-versatile',
@@ -537,6 +692,7 @@ Conversations: {conversation_count}
             return {'success': False, 'error': str(e)}
 
         elapsed = round((time.time() - t0) * 1000)
+        logger.info('generation_path=fallback_native_groq mode=%s', response_mode)
 
         return {
             'success': True,
@@ -546,4 +702,6 @@ Conversations: {conversation_count}
             'tokens_used': tokens_used,
             'response_time_ms': elapsed,
             'analysis': analysis,
+            'tutoring_mode': response_mode,
+            'mode_reason': response_reason,
         }

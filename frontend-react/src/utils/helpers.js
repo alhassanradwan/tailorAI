@@ -1,33 +1,62 @@
 /** Format a timestamp string into human-readable relative time */
-export function formatTimestamp(timestamp) {
+export function formatTimestamp(timestamp, options = {}) {
+  const locale = (options.locale || 'en').split('-')[0] === 'ar' ? 'ar' : 'en';
   const date = new Date(timestamp);
   const now = new Date();
   const diffMs = now - date;
   const diffMins = Math.floor(diffMs / 60000);
   const diffHours = Math.floor(diffMs / 3600000);
 
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins} minute${diffMins === 1 ? '' : 's'} ago`;
+  if (diffMins < 1) return locale === 'ar' ? 'الآن' : 'Just now';
+  if (diffMins < 60) {
+    if (locale === 'ar') {
+      return `منذ ${diffMins} دقيقة`;
+    }
+    return `${diffMins} minute${diffMins === 1 ? '' : 's'} ago`;
+  }
 
   if (diffHours < 24 && date.getDate() === now.getDate()) {
-    return `Today at ${fmtClock(date)}`;
+    return locale === 'ar' ? `اليوم ${fmtClock(date, locale)}` : `Today at ${fmtClock(date, locale)}`;
   }
 
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
   if (date.getDate() === yesterday.getDate() && date.getMonth() === yesterday.getMonth()) {
-    return `Yesterday at ${fmtClock(date)}`;
+    return locale === 'ar' ? `أمس ${fmtClock(date, locale)}` : `Yesterday at ${fmtClock(date, locale)}`;
   }
 
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   if (date.getFullYear() === now.getFullYear()) {
-    return `${months[date.getMonth()]} ${date.getDate()} at ${fmtClock(date)}`;
+    if (locale === 'ar') {
+      return new Intl.DateTimeFormat('ar', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      }).format(date);
+    }
+    return `${months[date.getMonth()]} ${date.getDate()} at ${fmtClock(date, locale)}`;
+  }
+
+  if (locale === 'ar') {
+    return new Intl.DateTimeFormat('ar', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    }).format(date);
   }
 
   return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
 }
 
-function fmtClock(date) {
+function fmtClock(date, locale = 'en') {
+  if (locale === 'ar') {
+    return new Intl.DateTimeFormat('ar', {
+      hour: 'numeric',
+      minute: '2-digit',
+    }).format(date);
+  }
+
   const hours = date.getHours();
   const mins = date.getMinutes();
   const ampm = hours >= 12 ? 'PM' : 'AM';
