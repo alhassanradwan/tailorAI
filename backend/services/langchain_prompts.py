@@ -1,5 +1,7 @@
 """LangChain prompt templates for tutoring and structured analysis."""
 
+import re
+
 try:
     from langchain_core.prompts import ChatPromptTemplate
 except Exception:
@@ -93,13 +95,41 @@ def select_output_plan(
     rationale = []
 
     msg = (user_message or '').lower()
+    comparison_intent = qt == 'comparison' or bool(
+        re.search(r'\b(compare|comparison|vs\.?|versus|difference(?:\s+between)?)\b', msg)
+    )
+    examples_intent = bool(
+        re.search(r'\b(example|examples|for example|with examples?)\b', msg)
+    )
+    use_cases_intent = bool(
+        re.search(r'\b(when to use|use case|use cases|where to use)\b', msg)
+    )
+
+    structured_intent = None
+    if comparison_intent:
+        structured_intent = 'comparison'
+    elif use_cases_intent:
+        structured_intent = 'use_cases'
+    elif examples_intent:
+        structured_intent = 'examples'
+
+    structured_response_required = structured_intent is not None
     visual_intent = any(k in msg for k in ('visual', 'diagram', 'flow', 'flowchart', 'chart', 'table'))
 
     if visual_intent and not has_code:
         include.append('visual')
         rationale.append('explicit visual request detected')
 
-    if has_code or (qt in {'code_request', 'debugging', 'how_to'} and not visual_intent):
+    if structured_intent == 'comparison':
+        include.append('table')
+        rationale.append('structured intent: comparison table required')
+    elif structured_intent == 'examples':
+        include.append('examples')
+        rationale.append('structured intent: explanation with examples required')
+    elif structured_intent == 'use_cases':
+        include.append('use_cases')
+        rationale.append('structured intent: use-cases breakdown required')
+    elif has_code or (qt in {'code_request', 'debugging', 'how_to'} and not visual_intent):
         include.append('code')
         rationale.append('code requested or implementation-oriented question')
     elif qt in {'comparison'}:
@@ -122,11 +152,18 @@ def select_output_plan(
         rationale.append('confusion detected: include one short checkpoint')
 
     # Keep responses focused: explanation + at most one primary support + optional single practice.
-    support_priority = ['code', 'visual', 'table', 'analogy']
-    selected_support = next((item for item in support_priority if item in include), None)
     include_final = ['explanation']
-    if selected_support:
-        include_final.append(selected_support)
+    if structured_intent == 'comparison':
+        include_final.append('table')
+    elif structured_intent == 'examples':
+        include_final.append('examples')
+    elif structured_intent == 'use_cases':
+        include_final.append('use_cases')
+    else:
+        support_priority = ['code', 'visual', 'table', 'analogy']
+        selected_support = next((item for item in support_priority if item in include), None)
+        if selected_support:
+            include_final.append(selected_support)
     if 'practice' in include:
         include_final.append('practice')
 
@@ -138,6 +175,8 @@ def select_output_plan(
         'sections': include_final,
         'max_sections': max_sections,
         'max_questions': 1,
+        'structured_response_required': structured_response_required,
+        'structured_intent': structured_intent,
         'confusion_state': confusion_state,
         'rationale': '; '.join(rationale) if rationale else 'default explanation-first plan',
     }
@@ -148,6 +187,28 @@ def response_contract(question_type: str, sections: list[str]) -> str:
     qtype = (question_type or 'general').strip().lower()
     sec = sections or ['explanation']
     has_code = 'code' in sec or qtype in {'code_request', 'debugging', 'how_to'}
+
+    if 'examples' in sec:
+        return (
+            'FORMAT CONTRACT: 1) Concept (short and clear). '
+            '2) Examples section with at least 2 concrete examples. '
+            '3) Optional brief takeaway. Use clear headings.'
+        )
+
+    if 'use_cases' in sec:
+        return (
+            'FORMAT CONTRACT: 1) Concept summary. '
+            '2) When to use (bullet list). '
+            '3) When not to use (bullet list). '
+            '4) Optional quick rule of thumb. Use clear headings.'
+        )
+
+    if qtype == 'comparison' or 'table' in sec:
+        return (
+            'FORMAT CONTRACT: 1) Brief comparison setup. '
+            '2) Compact comparison table with practical criteria. '
+            '3) Recommendation for when to choose each option.'
+        )
 
     if has_code:
         return (

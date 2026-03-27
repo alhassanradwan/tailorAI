@@ -11,6 +11,10 @@ from config import Config
 logger = logging.getLogger(__name__)
 
 
+class DatabaseUnavailableError(RuntimeError):
+    """Raised when no MongoDB connection can be established."""
+
+
 class Database:
     """MongoDB database connection manager (Atlas-ready)"""
 
@@ -18,19 +22,24 @@ class Database:
     db = None
 
     @staticmethod
+    def _connect(uri):
+        """Try connecting with the current client options and return (client, db)."""
+        client = MongoClient(
+            uri,
+            maxPoolSize=10,              # M0 free tier allows 100 connections
+            serverSelectionTimeoutMS=2000,  # Fast fail if DB unavailable
+            connectTimeoutMS=2000,
+            retryWrites=True,
+        )
+        client.admin.command('ping')
+        db = client[Config.MONGODB_DB_NAME]
+        return client, db
+
+    @staticmethod
     def initialize():
         """Initialize MongoDB connection with Atlas-safe settings"""
         try:
-            Database.client = MongoClient(
-                Config.MONGODB_URI,
-                maxPoolSize=10,              # M0 free tier allows 100 connections
-                serverSelectionTimeoutMS=2000,  # Fast fail if DB unavailable
-                connectTimeoutMS=2000,
-                retryWrites=True,
-            )
-            # Verify connection is alive
-            Database.client.admin.command('ping')
-            Database.db = Database.client[Config.MONGODB_DB_NAME]
+            Database.client, Database.db = Database._connect(Config.MONGODB_URI)
             logger.info("✅ Connected to MongoDB: %s", Config.MONGODB_DB_NAME)
             Database._ensure_indexes()
             return True
@@ -87,6 +96,8 @@ class Database:
         """Get a specific collection from the database"""
         if Database.db is None:
             Database.initialize()
+        if Database.db is None:
+            raise DatabaseUnavailableError("Database unavailable: MongoDB connection could not be established")
         return Database.db[collection_name]
 
     @staticmethod

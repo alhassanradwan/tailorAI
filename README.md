@@ -24,10 +24,11 @@ An AI-powered personalized learning platform for Data Science, Machine Learning,
 
 ```
 AdaptiveAI/
-├── frontend/
-│   ├── index.html      # Main UI
-│   ├── script.js       # Frontend logic
-│   └── styles.css      # Styling
+├── frontend-react/     # Active React frontend (Vite)
+│   ├── src/
+│   ├── public/
+│   └── package.json
+├── frontend/           # Legacy static frontend (kept for reference)
 │
 ├── backend/
 │   ├── app.py          # Flask server
@@ -54,7 +55,7 @@ AdaptiveAI/
 ### Prerequisites
 - **Python 3.11** (3.11.x required — 3.12+ and 3.14 are **not** supported due to MongoDB TLS and Pydantic compatibility issues)
 - MongoDB (local or Atlas)
-- Groq API key (or OpenAI API key)
+- Groq API key
 
 ### Backend Setup
 
@@ -108,11 +109,23 @@ AdaptiveAI/
    ```
    Server runs at: http://localhost:5000
 
-### Frontend Setup
+### Frontend Setup (React)
 
-1. **Open frontend/index.html** in browser, or use Live Server:
-   - VS Code: Right-click → "Open with Live Server"
-   - This will run at: http://127.0.0.1:5500
+1. **Navigate to React frontend:**
+   ```bash
+   cd frontend-react
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+3. **Run development server:**
+   ```bash
+   npm run dev
+   ```
+   Frontend runs at: http://localhost:5173
 
 ## 📡 API Endpoints
 
@@ -121,15 +134,24 @@ AdaptiveAI/
 - `POST /api/auth/login` - Login user
 
 ### Chat (AI Agents)
-- `POST /api/chat/message` - Send message to AI agent
+- `POST /api/chat/groq` - Active chat endpoint (JWT protected)
 - `GET /api/chat/history/<user_id>` - Get chat history
 - `POST /api/chat/analyze-progression` - Check level updates
 
+Legacy status:
+- `POST /api/chat/message` is disabled and returns `410`
+
 ### Analytics
-- `POST /api/analytics/save` - Save quiz analytics
-- `GET /api/analytics/user/<email>` - Get user analytics
-- `GET /api/analytics/progress/<email>` - Get progress report
-- `POST /api/analytics/webhook/n8n` - n8n webhook endpoint
+- `GET /api/analytics/summary` - User analytics summary (JWT protected)
+- `GET /api/analytics/mastery-map` - Topic mastery map (JWT protected)
+- `GET /api/analytics/misconceptions` - Misconceptions list (JWT protected)
+- `GET /api/analytics/engagement` - Engagement timeline/metrics (JWT protected)
+
+Legacy status:
+- `POST /api/analytics/save` returns `410`
+- `GET /api/analytics/user/<email>` returns `410`
+- `GET /api/analytics/progress/<email>` returns `410`
+- `POST /api/analytics/webhook/n8n` returns `410`
 
 ### Profile
 - `GET /api/profile/<user_id>` - Get user profile
@@ -158,15 +180,9 @@ AdaptiveAI/
 - CNNs, RNNs, Transformers
 - TensorFlow, PyTorch
 
-## 🔄 n8n Integration
+## 🔄 Legacy Automation Note
 
-The system includes a webhook endpoint for n8n automation:
-- `POST /api/analytics/webhook/n8n`
-
-Use this to:
-- Automatically check for level progression
-- Trigger notifications
-- Schedule analytics reports
+Legacy analytics webhook endpoint is currently disabled (`410`) to reduce public exposure risk.
 
 ## 📊 Learning Personalization
 
@@ -185,15 +201,16 @@ The system adapts based on:
 cd backend
 python app.py
 
-# Frontend (with Live Server)
-cd frontend
-# Use VS Code Live Server extension
+# Frontend (React)
+cd frontend-react
+npm run dev
 ```
 
 ### MongoDB Collections
 - `users` - User accounts and profiles
-- `analytics` - Quiz and learning analytics
 - `interactions` - Chat history
+- `knowledge_states` - Per-student adaptive analytics state
+- `sessions` - Session tracking
 
 ## 📝 License
 

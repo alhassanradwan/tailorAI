@@ -106,11 +106,8 @@ def refresh():
 def logout():
     """Handle user logout"""
     user_id = get_jwt_identity()
-    
-    # Get token from header
-    token = request.headers.get('Authorization', '').replace('Bearer ', '')
-    
+
     # Invalidate session
-    SessionService.invalidate_session(token)
+    SessionService.invalidate_session(user_id)
     
     return jsonify({"message": "Logged out successfully"}), 200

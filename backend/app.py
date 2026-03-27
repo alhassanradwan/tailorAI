@@ -4,7 +4,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from config import Config
-from database import Database
+from database import Database, DatabaseUnavailableError
 from routes.auth import auth_bp
 from routes.profile import profile_bp
 from routes.chat import chat_bp
@@ -104,6 +104,12 @@ def unprocessable(e):
 def internal_error(e):
     logger.error("Internal server error: %s", e, exc_info=True)
     return jsonify({"error": "Internal server error"}), 500
+
+
+@app.errorhandler(DatabaseUnavailableError)
+def database_unavailable(e):
+    logger.warning("Database unavailable during request: %s", e)
+    return jsonify({"error": str(e)}), 503
 
 
 if __name__ == '__main__':

@@ -1,6 +1,7 @@
 """LangChain tutor response generation with strict fallback behavior."""
 
 import logging
+import re
 
 from services.langchain_provider import LangChainProvider
 from services.langchain_prompts import (
@@ -14,6 +15,137 @@ from services.langchain_prompts import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _split_paragraphs(text: str) -> list[str]:
+    return [p.strip() for p in re.split(r'\n\s*\n+', text or '') if p.strip()]
+
+
+def _split_sentences(text: str) -> list[str]:
+    chunks = re.split(r'(?<=[.!?])\s+', (text or '').strip())
+    return [c.strip() for c in chunks if c.strip()]
+
+
+def _has_table_shape(text: str) -> bool:
+    lines = [ln for ln in (text or '').splitlines() if ln.strip()]
+    if len(lines) < 2:
+        return False
+    table_like = sum(1 for ln in lines if '|' in ln)
+    return table_like >= 2
+
+
+def _has_comparison_section(text: str) -> bool:
+    return bool(re.search(r'(?im)^\s{0,3}(?:#{1,6}\s*)?comparison\s*:?', text or ''))
+
+
+def _example_count(text: str) -> int:
+    explicit = re.findall(r'(?im)^\s*(?:[-*]\s*)?example\s*\d*[:\-]?', text or '')
+    if len(explicit) >= 2:
+        return len(explicit)
+    phrase_hits = len(re.findall(r'(?i)\bfor example\b', text or ''))
+    numbered_hits = len(re.findall(r'(?i)\bexample\s*\d+\b', text or ''))
+    return max(len(explicit), phrase_hits + numbered_hits)
+
+
+def _has_examples_section(text: str) -> bool:
+    return bool(re.search(r'(?im)^\s{0,3}(?:#{1,6}\s*)?examples\s*:?', text or ''))
+
+
+def _contains_examples(text: str) -> bool:
+    return _has_examples_section(text) and _example_count(text) >= 2
+
+
+def _contains_use_case_sections(text: str) -> bool:
+    has_when_to_use = bool(re.search(r'(?im)^\s{0,3}(?:#{1,6}\s*)?when to use\s*:?', text or ''))
+    has_when_not = bool(re.search(r'(?im)^\s{0,3}(?:#{1,6}\s*)?when not to use\s*:?', text or ''))
+    return has_when_to_use and has_when_not
+
+
+def _format_comparison(text: str) -> str:
+    paragraphs = _split_paragraphs(text)
+    explanation = paragraphs[0] if paragraphs else (text or '').strip()
+    remainder = '\n\n'.join(paragraphs[1:]).strip() if len(paragraphs) > 1 else ''
+    if not remainder:
+        remainder = (text or '').strip()
+
+    return (
+        'Explanation\n'
+        f'{explanation}\n\n'
+        'Comparison\n'
+        f'{remainder}'
+    ).strip()
+
+
+def _format_examples(text: str) -> str:
+    paragraphs = _split_paragraphs(text)
+    explanation = paragraphs[0] if paragraphs else (text or '').strip()
+    source = '\n\n'.join(paragraphs[1:]).strip() if len(paragraphs) > 1 else (text or '').strip()
+    sentences = _split_sentences(source)
+
+    if len(sentences) >= 2:
+        ex1 = sentences[0]
+        ex2 = sentences[1]
+    elif len(sentences) == 1:
+        ex1 = sentences[0]
+        ex2 = sentences[0]
+    else:
+        ex1 = source or explanation
+        ex2 = source or explanation
+
+    return (
+        'Explanation\n'
+        f'{explanation}\n\n'
+        'Examples\n'
+        f'- Example 1: {ex1}\n'
+        f'- Example 2: {ex2}'
+    ).strip()
+
+
+def _format_use_cases(text: str) -> str:
+    paragraphs = _split_paragraphs(text)
+    explanation = paragraphs[0] if paragraphs else (text or '').strip()
+    source = '\n\n'.join(paragraphs[1:]).strip() if len(paragraphs) > 1 else (text or '').strip()
+    sentences = _split_sentences(source)
+
+    midpoint = max(1, len(sentences) // 2) if sentences else 1
+    when_to_use = ' '.join(sentences[:midpoint]).strip() if sentences else source
+    when_not_to_use = ' '.join(sentences[midpoint:]).strip() if len(sentences) > midpoint else source
+
+    return (
+        'Explanation\n'
+        f'{explanation}\n\n'
+        'When to Use\n'
+        f'{when_to_use}\n\n'
+        'When Not to Use\n'
+        f'{when_not_to_use}'
+    ).strip()
+
+
+def _enforce_structured_output(text: str, plan: dict) -> str:
+    if not (plan or {}).get('structured_response_required'):
+        return text
+
+    structured_intent = (plan or {}).get('structured_intent')
+    content = (text or '').strip()
+    if not content:
+        return content
+
+    if structured_intent == 'comparison':
+        if _has_table_shape(content) or _has_comparison_section(content):
+            return content
+        return _format_comparison(content)
+
+    if structured_intent == 'examples':
+        if _contains_examples(content):
+            return content
+        return _format_examples(content)
+
+    if structured_intent == 'use_cases':
+        if _contains_use_case_sections(content):
+            return content
+        return _format_use_cases(content)
+
+    return content
 
 
 class LangChainGenerator:
@@ -85,6 +217,8 @@ class LangChainGenerator:
             response_text = (getattr(result, 'content', '') or '').strip()
             if not response_text:
                 return {'used': False, 'response': '', 'tokens_used': 0, 'error': 'empty_response'}
+
+            response_text = _enforce_structured_output(response_text, plan)
 
             usage = getattr(result, 'response_metadata', {}) or {}
             token_usage = usage.get('token_usage', {}) if isinstance(usage, dict) else {}

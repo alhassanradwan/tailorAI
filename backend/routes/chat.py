@@ -21,74 +21,11 @@ chat_bp = Blueprint('chat', __name__)
 
 @chat_bp.route('/message', methods=['POST'])
 def send_message():
-    """
-    Handle incoming chat messages and return AI response
-    
-    Expected payload:
-    {
-        "user_id": "user-uuid",
-        "message": "What is gradient descent?",
-        "profile": { ... learner profile ... },
-        "chat_history": [ ... previous messages ... ]
-    }
-    """
-    data = request.get_json()
-    
-    user_id = data.get('user_id')
-    message = data.get('message')
-    profile = data.get('profile')
-    chat_history = data.get('chat_history', [])
-    
-    if not message:
-        return jsonify({"error": "Message is required"}), 400
-    
-    # Generate AI response using the agent system
-    result = AIService.generate_response(
-        query=message,
-        profile=profile,
-        chat_history=chat_history
-    )
-    
-    if result.get('success'):
-        mode, reason = AdaptiveModeService.decide_mode(
-            learner_level=(profile or {}).get('skill_level') or (profile or {}).get('python'),
-            uncertainty_markers=0,
-            misconception_detected=False,
-            emotional_state='neutral',
-            low_mastery_detected=False,
-            user_preference=((profile or {}).get('conversation_preferences') or {}).get('adaptive_preference'),
-        )
-
-        # Store interaction in database if user is logged in
-        if user_id:
-            try:
-                interactions = Database.get_collection('interactions')
-                interactions.insert_one({
-                    "user_id": user_id,
-                    "message": message,
-                    "response": result['response'],
-                    "agent": result['agent'],
-                    "tutoring_mode": mode,
-                    "mode_reason": reason,
-                    "tokens_used": result.get('tokens_used', 0),
-                    "timestamp": datetime.utcnow().isoformat()
-                })
-            except Exception as e:
-                print(f"Failed to log interaction: {e}")
-        
-        return jsonify({
-            "success": True,
-            "response": result['response'],
-            "agent": result['agent'],
-            "agent_name": result['agent'].replace('_', ' ').title(),
-            "mode": mode,
-            "reason": reason,
-        }), 200
-    else:
-        return jsonify({
-            "success": False,
-            "error": result.get('error', 'Unknown error occurred')
-        }), 500
+    """Legacy endpoint intentionally disabled. Use /api/chat/groq."""
+    return jsonify({
+        "success": False,
+        "error": "Legacy endpoint disabled. Use /api/chat/groq."
+    }), 410
 
 
 @chat_bp.route('/history/<user_id>', methods=['GET'])

@@ -379,6 +379,8 @@ class DeepAgentRouter:
             or (word_count > 50 and len(topics_kw) < 2)
             or len(meta.get('misconception_signals', [])) > 0
         )
+        print('USE_LANGCHAIN:', Config.USE_LANGCHAIN)
+        print('should_llm:', should_llm)
 
         if should_llm and Config.USE_LANGCHAIN:
             try:
@@ -404,10 +406,17 @@ class DeepAgentRouter:
                     logger.info('analysis_path=langchain_hybrid')
                 else:
                     langchain_fallback_reason = lc_result.get('error') or 'unknown'
+                    if langchain_fallback_reason == 'provider_or_prompt_unavailable':
+                        print('analysis_debug: provider disabled or model creation failed')
+                    if langchain_fallback_reason == 'parse_failed':
+                        print('analysis_debug: parsing failed')
                     logger.info('analysis_path=fallback reason=%s', langchain_fallback_reason)
             except Exception as e:
                 langchain_fallback_reason = 'invoke_failed'
                 logger.warning('LangChain analysis integration failed: %s', e)
+
+        print('analysis_path:', 'langchain' if langchain_used else 'fallback')
+        print('analysis_fallback_reason:', langchain_fallback_reason)
 
         if should_llm and client and not langchain_used:
             llm_result = _analyze_with_llm(client, message, knowledge_state)
@@ -629,6 +638,9 @@ Conversations: {conversation_count}
         messages.append({'role': 'user', 'content': message})
 
         # 5. LangChain path (feature-flagged) with strict fallback.
+        attempting_langchain_generation = bool(Config.USE_LANGCHAIN)
+        print('attempting_langchain_generation:', attempting_langchain_generation)
+        generation_fallback_reason = None
         if Config.USE_LANGCHAIN:
             try:
                 misconceptions = []
@@ -659,6 +671,8 @@ Conversations: {conversation_count}
 
                 if lc_result.get('used') and lc_result.get('response'):
                     elapsed = round((time.time() - t0) * 1000)
+                    print('generation_path:', 'langchain')
+                    print('generation_fallback_reason:', None)
                     logger.info('generation_path=langchain mode=%s', response_mode)
                     return {
                         'success': True,
@@ -672,9 +686,15 @@ Conversations: {conversation_count}
                         'mode_reason': response_reason,
                     }
 
-                logger.info('generation_path=fallback reason=%s', lc_result.get('error', 'unknown'))
+                generation_fallback_reason = lc_result.get('error', 'unknown')
+                if generation_fallback_reason == 'provider_or_prompt_unavailable':
+                    print('generation_debug: provider disabled or model creation failed')
+                logger.info('generation_path=fallback reason=%s', generation_fallback_reason)
             except Exception as e:
+                generation_fallback_reason = 'invoke_failed'
                 logger.warning('LangChain generation integration failed, using fallback: %s', e)
+        else:
+            generation_fallback_reason = 'feature_flag_disabled'
 
         # 6. call Groq fallback path
         try:
@@ -692,6 +712,8 @@ Conversations: {conversation_count}
             return {'success': False, 'error': str(e)}
 
         elapsed = round((time.time() - t0) * 1000)
+        print('generation_path:', 'fallback')
+        print('generation_fallback_reason:', generation_fallback_reason)
         logger.info('generation_path=fallback_native_groq mode=%s', response_mode)
 
         return {
