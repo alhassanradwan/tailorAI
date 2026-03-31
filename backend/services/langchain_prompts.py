@@ -102,7 +102,7 @@ def select_output_plan(
         re.search(r'\b(example|examples|for example|with examples?)\b', msg)
     )
     use_cases_intent = bool(
-        re.search(r'\b(when to use|use case|use cases|where to use)\b', msg)
+        re.search(r'\b(when to use|when should i use|use case|use cases|where to use)\b', msg)
     )
 
     structured_intent = None

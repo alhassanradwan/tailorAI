@@ -6,7 +6,7 @@ export default function SpaceBackground() {
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const starCount = 300;
+    const starCount = 100;
     for (let i = 0; i < starCount; i++) {
       const star = document.createElement('div');
       star.className = 'star';
@@ -21,8 +21,6 @@ export default function SpaceBackground() {
   return (
     <div className="space-background">
       <div className="stars-container" ref={containerRef}></div>
-      <div className="planet planet-1"></div>
-      <div className="planet planet-2"></div>
       <div className="shooting-star"></div>
       <div className="shooting-star shooting-star-delay-1"></div>
       <div className="shooting-star shooting-star-delay-2"></div>

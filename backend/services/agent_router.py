@@ -21,6 +21,7 @@ from config import Config
 from services.adaptive_mode_service import AdaptiveModeService
 from services.langchain_analyzer import LangChainAnalyzer
 from services.langchain_generator import LangChainGenerator
+from services.langchain_prompts import select_output_plan
 
 logger = logging.getLogger(__name__)
 
@@ -637,22 +638,43 @@ Conversations: {conversation_count}
             })
         messages.append({'role': 'user', 'content': message})
 
+        recent_context = ' | '.join(
+            [f"{m.get('role', 'user')}: {m.get('content', '')}" for m in (chat_history or [])[-4:]]
+        )
+        topic_context = ', '.join(analysis.get('topics', [])) or 'general'
+        generation_plan = select_output_plan(
+            question_type=analysis.get('question_type', 'general'),
+            complexity=analysis.get('complexity', 'intermediate'),
+            uncertainty_markers=(analysis.get('message_analysis', {}) or {}).get('uncertainty_markers', 0),
+            has_code=(analysis.get('message_analysis', {}) or {}).get('has_code', False),
+            topic_context=topic_context,
+            recent_context=recent_context,
+            user_message=message,
+        )
+        structured_intents = {'comparison', 'examples', 'use_cases'}
+        use_langchain_generation = (
+            Config.USE_LANGCHAIN
+            and generation_plan.get('structured_response_required', False)
+            and generation_plan.get('structured_intent') in structured_intents
+        )
+        logger.info(
+            'Generation routing: path=%s structured_required=%s structured_intent=%s',
+            'langchain' if use_langchain_generation else 'native',
+            generation_plan.get('structured_response_required', False),
+            generation_plan.get('structured_intent'),
+        )
+
         # 5. LangChain path (feature-flagged) with strict fallback.
-        attempting_langchain_generation = bool(Config.USE_LANGCHAIN)
+        attempting_langchain_generation = bool(use_langchain_generation)
         print('attempting_langchain_generation:', attempting_langchain_generation)
         generation_fallback_reason = None
-        if Config.USE_LANGCHAIN:
+        if use_langchain_generation:
             try:
                 misconceptions = []
                 for topic, md in (knowledge_state.get('misconceptions', {}) or {}).items():
                     if isinstance(md, dict) and not md.get('corrected'):
                         detail = (md.get('detail') or '').strip()
                         misconceptions.append(f"{topic}: {detail}" if detail else topic)
-
-                recent_context = ' | '.join(
-                    [f"{m.get('role', 'user')}: {m.get('content', '')}" for m in (chat_history or [])[-4:]]
-                )
-                topic_context = ', '.join(analysis.get('topics', [])) or 'general'
 
                 lc_result = LangChainGenerator.generate_response(
                     tutoring_mode=response_mode,
@@ -694,7 +716,7 @@ Conversations: {conversation_count}
                 generation_fallback_reason = 'invoke_failed'
                 logger.warning('LangChain generation integration failed, using fallback: %s', e)
         else:
-            generation_fallback_reason = 'feature_flag_disabled'
+            generation_fallback_reason = 'native_default_unstructured'
 
         # 6. call Groq fallback path
         try:
