@@ -463,6 +463,7 @@ class DeepAgentRouter:
         analysis: dict = None,
         forced_mode: str = None,
         forced_reason: str = None,
+        rag_context: str = None,
     ):
         """
         Construct a fully-personalised system prompt merging:
@@ -583,6 +584,19 @@ Conversations: {conversation_count}
 
 {'Keep responses to 2-4 sentences MAX.' if pl == 'short' else 'Keep responses concise but thorough (150-300 words unless more detail requested).'}"""
 
+        # ── RAG context injection (appended, never overwrites) ──
+        if rag_context:
+            prompt += f"""
+
+=== RETRIEVED DOMAIN KNOWLEDGE (from knowledge graph) ===
+Use the following retrieved concepts to ground your response.
+Teach these concepts in YOUR tutoring voice — do not copy verbatim.
+If the retrieved info contradicts your knowledge, prefer your own.
+Only use what is directly relevant to the student's question.
+
+{rag_context}
+"""
+
         return prompt
 
     # ── orchestrator ────────────────────────────────────────
@@ -608,6 +622,23 @@ Conversations: {conversation_count}
         # 2. route
         agent_key = DeepAgentRouter.route(message, knowledge_state)
 
+        # 2b. RAG retrieval (feature-flagged, fail-safe)
+        rag_context = None
+        if Config.USE_RAG:
+            try:
+                from services.rag.rag_router import RAGRouter
+                student_context = {
+                    'weak_topics': knowledge_state.get('weak_topics', []),
+                }
+                rag_result = RAGRouter.retrieve(agent_key, message, student_context)
+                if rag_result:
+                    rag_context = rag_result.get('formatted_context', '') or None
+                    if rag_context:
+                        logger.info('RAG context retrieved for domain=%s concepts=%s',
+                                    agent_key, rag_result.get('primary_concepts', []))
+            except Exception as e:
+                logger.warning('RAG retrieval failed, continuing without: %s', e)
+
         # Single source of truth for current response mode.
         recs = analysis.get('recommendations', {})
         response_mode = recs.get('tutoring_mode') or knowledge_state.get('current_adaptations', {}).get('tutoring_mode', 'direct')
@@ -627,6 +658,7 @@ Conversations: {conversation_count}
             analysis,
             forced_mode=response_mode,
             forced_reason=response_reason,
+            rag_context=rag_context,
         )
 
         # 4. build messages

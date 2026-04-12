@@ -23,6 +23,11 @@ langchain-core==0.3.75
 langchain-groq==0.3.8
 pydantic==2.11.7
 
+# RAG — Neo4j knowledge graph retrieval
+neo4j>=5.0
+sentence-transformers>=2.7.0
+langchain-huggingface>=0.1.0,<1.0.0
+
 # Environment Variables
 python-dotenv==1.0.0
 

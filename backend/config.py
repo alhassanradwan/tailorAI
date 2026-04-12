@@ -34,6 +34,9 @@ class Config:
 
     # LangChain integration feature flag (default: enabled)
     USE_LANGCHAIN = os.getenv('USE_LANGCHAIN', 'true').strip().lower() in ('1', 'true', 'yes', 'on')
+
+    # RAG integration feature flag (default: disabled for safe rollout)
+    USE_RAG = os.getenv('USE_RAG', 'false').strip().lower() in ('1', 'true', 'yes', 'on')
     
     # CORS settings (allow frontend to connect)
     # In production, set CORS_ORIGINS env var as comma-separated URLs
