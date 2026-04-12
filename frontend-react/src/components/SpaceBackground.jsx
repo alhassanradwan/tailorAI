@@ -6,7 +6,7 @@ export default function SpaceBackground() {
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const starCount = 100;
+    const starCount = 80;
     for (let i = 0; i < starCount; i++) {
       const star = document.createElement('div');
       star.className = 'star';
