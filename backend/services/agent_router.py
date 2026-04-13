@@ -98,7 +98,8 @@ _TOPIC_PATTERNS = {
     'model_evaluation': r'\b(accuracy|precision|recall|f1.score|roc|auc|confusion matrix|cross.validation|overfitting|underfitting)\b',
     'gradient_descent': r'\b(gradient descent|sgd|learning rate|optimizer|convergence|loss function|cost function)\b',
     'regularization': r'\b(regularization|l1|l2|ridge|lasso|dropout|early stopping|weight decay)\b',
-    'neural_networks': r'\b(neural network|nn|perceptron|mlp|feedforward|deep learning|dl)\b',
+    'feature_engineering': r'\b(feature selection|feature engineering|dimensionality reduction|pca|principal component|t-sne|lda)\b',
+    'neural_networks': r'\b(neural networks?|nn|perceptron|mlp|feedforward|deep learning|dl)\b',
     'cnn': r'\b(cnn|convolutional|convolution|pooling|image recognition|computer vision|resnet|vgg)\b',
     'rnn': r'\b(rnn|recurrent|lstm|gru|sequence model|time series|bidirectional)\b',
     'transformers': r'\b(transformer|attention|self.attention|bert|gpt|encoder.decoder|positional encoding)\b',
@@ -141,6 +142,19 @@ _QUESTION_TYPE_PATTERNS = {
 _MISCONCEPTION_INDICATORS = [
     r'\b(i thought|i assumed|isn\'?t it|wait,? so|but i think|confused because)\b',
     r'\b(that doesn\'?t make sense|contradicts?|but earlier|you said)\b',
+    # Assertions / claims that may contain misconceptions
+    r'\b(is basically|is essentially|is just|is the same as|is another word for)\b',
+    r'\b(always|never|cannot|impossible|only way|must be|has to be)\b',
+    r'\b(so basically|so that means|so it\'?s|meaning that|which means)\b',
+    r'\b(the reason is|because .+ is|since .+ is|everyone knows)\b',
+]
+
+# Patterns for declarative assertions about technical concepts.
+# When a student states something as fact (rather than asking), the LLM
+# should verify whether it's accurate.
+_ASSERTION_PATTERNS = [
+    r'^(?:so |okay,? so |right,? so )?\w.+ (?:is|are|means|works? by|uses?) ',
+    r'\b(?:I know|I believe|I read|I learned|from what I understand)\b',
 ]
 
 _UNCERTAINTY_INDICATORS = [
@@ -181,10 +195,16 @@ def _message_meta(message: str):
     uncertainty = 0
     for p in _UNCERTAINTY_INDICATORS:
         uncertainty += len(re.findall(p, message, re.I))
+    # Detect if the message is an assertion/claim (vs a question).
+    is_assertion = (
+        '?' not in message
+        and any(re.search(p, message, re.I) for p in _ASSERTION_PATTERNS)
+    )
     return {
         'word_count': len(words),
         'has_code': bool(re.search(r'(```|def |class |import |print\(|for .* in)', message)),
         'has_question_mark': '?' in message,
+        'is_assertion': is_assertion,
         'uncertainty_markers': uncertainty,
         'misconception_signals': misconceptions,
     }
@@ -246,8 +266,42 @@ def _build_recommendations(topics, complexity, qtype, ks, meta):
         recs['misconception_detected'] = True
         recs['misconception_topic'] = topics[0] if topics else 'general'
         recs['trigger_socratic_mode'] = True
-    if meta.get('uncertainty_markers', 0) >= 2:
+
+    # Confusion = misconception. Any uncertainty about a topic means the
+    # student doesn't truly understand it, which counts as a misconception.
+    uncertainty = meta.get('uncertainty_markers', 0)
+    if uncertainty >= 1 and topics:
         recs['trigger_socratic_mode'] = True
+        if not recs.get('misconception_detected'):
+            recs['misconception_detected'] = True
+            recs['misconception_topic'] = topics[0]
+            recs['misconception_detail'] = (
+                f'Student expressed confusion/uncertainty about {topics[0]}'
+            )
+    elif uncertainty >= 2:
+        recs['trigger_socratic_mode'] = True
+
+    # Repeated-topic confusion: if the student keeps asking beginner-level
+    # questions about a topic they've already discussed 3+ times, this
+    # signals persistent confusion — which often hides a misconception.
+    for t in topics:
+        td = topics_map.get(t, {})
+        if isinstance(td, dict):
+            count = td.get('count', 0)
+            cl = td.get('complexity_levels', {})
+            beginner_count = cl.get('beginner', 0) if isinstance(cl, dict) else 0
+            total_cl = sum(cl.values()) if isinstance(cl, dict) else 0
+            # 3+ interactions, mostly beginner — student is stuck
+            if count >= 3 and total_cl > 0 and beginner_count / total_cl > 0.5:
+                recs['trigger_socratic_mode'] = True
+                if not recs.get('misconception_detected'):
+                    recs['misconception_detected'] = True
+                    recs['misconception_topic'] = t
+                    recs['misconception_detail'] = (
+                        f'Student has asked about {t} {count} times at beginner level — '
+                        f'possible persistent misunderstanding'
+                    )
+                break
 
     # comprehension check
     for t, td in topics_map.items():
@@ -304,16 +358,26 @@ Current skill level: {profile.get('skill_level', 'intermediate')}
 Strong topics: {profile.get('strong_topics', [])}
 Weak topics: {profile.get('weak_topics', [])}
 
+MISCONCEPTION DETECTION (critical):
+Set is_misconception=true if the student:
+- States something factually incorrect about a technical concept
+- Confuses two different concepts (e.g. "overfitting is the same as high variance")
+- Makes absolute/wrong claims ("gradient descent always converges", "CNNs only work for images")
+- Shows a fundamental misunderstanding even in how they phrase their question
+If is_misconception is true, misconception_detail MUST explain what is wrong and what the correct understanding is.
+
 Return ONLY valid JSON (no markdown):
 {{
   "topics": ["topic1"],
   "complexity": "beginner|intermediate|advanced",
   "question_type": "definition|how_to|why|comparison|debugging|code_request|general",
   "is_misconception": true/false,
-  "misconception_detail": "what the student may misunderstand (or null)",
+  "misconception_detail": "what is wrong and what is correct (or null)",
   "emotional_state": "confident|curious|confused|frustrated|neutral",
   "suggested_approach": "explain_simply|provide_examples|use_analogy|show_code|ask_questions|correct_misconception"
-}}"""
+}}
+
+Topics should be lowercase with underscores (e.g., neural_networks, gradient_descent)."""
 
         completion = client.chat.completions.create(
             model='llama-3.3-70b-versatile',
@@ -375,10 +439,18 @@ class DeepAgentRouter:
         langchain_fallback_reason = None
 
         word_count = meta.get('word_count', 0)
+        uncertainty = meta.get('uncertainty_markers', 0)
         should_llm = (
             len(topics_kw) == 0
             or (word_count > 50 and len(topics_kw) < 2)
             or len(meta.get('misconception_signals', [])) > 0
+            # When a student makes a declarative statement about a detected
+            # topic, the LLM should check for misconceptions — this is where
+            # students express wrong beliefs without realising it.
+            or (len(topics_kw) > 0 and meta.get('is_assertion', False))
+            # Any confusion about a topic → ask LLM to diagnose what exactly
+            # the student is confused about.
+            or (len(topics_kw) > 0 and uncertainty >= 1)
         )
         print('USE_LANGCHAIN:', Config.USE_LANGCHAIN)
         print('should_llm:', should_llm)
@@ -437,6 +509,16 @@ class DeepAgentRouter:
                 recs['misconception_detected'] = True
                 recs['misconception_detail'] = llm_data.get('misconception_detail')
                 recs['trigger_socratic_mode'] = True
+
+            # Confusion detected by LLM = misconception.
+            if llm_data.get('emotional_state') == 'confused' and topics:
+                recs['trigger_socratic_mode'] = True
+                if not recs.get('misconception_detected'):
+                    recs['misconception_detected'] = True
+                    recs['misconception_topic'] = topics[0]
+                    recs['misconception_detail'] = (
+                        f'LLM detected student confusion about {topics[0]}'
+                    )
 
         recs = _finalize_tutoring_mode(recs, knowledge_state, topics, meta)
 

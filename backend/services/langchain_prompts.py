@@ -284,11 +284,26 @@ def get_analysis_prompt_template():
         (
             'system',
             (
-                'Analyze a learner message for tutoring cues. Return ONLY JSON object with keys: '
-                'topics (list[string]), confusion_level (0..1), uncertainty_markers (int), '
-                'misconception_detected (bool), misconception_detail (string|null), emotional_state (string), '
-                'suggested_approach (string), mode_suggestion (string|null), confidence (0..1). '
-                'Do not include markdown.'
+                'You are an analysis engine for an adaptive AI tutoring system. '
+                'Analyze the learner message and return ONLY a JSON object (no markdown, no explanation).\n\n'
+                'MISCONCEPTION DETECTION (critical):\n'
+                'Set misconception_detected=true if the student:\n'
+                '- States something factually incorrect about a technical concept\n'
+                '- Confuses two different concepts (e.g., "overfitting is the same as high variance")\n'
+                '- Uses absolute/wrong claims ("gradient descent always converges", "CNNs only work for images")\n'
+                '- Shows a fundamental misunderstanding even in how they ask a question\n'
+                '- Repeatedly asks the same basic question (signals hidden confusion)\n'
+                'If misconception_detected=true, misconception_detail MUST explain what is wrong and what the correct understanding is.\n\n'
+                'JSON keys:\n'
+                '- topics: list[string] — technical topics in the message (lowercase_with_underscores)\n'
+                '- confusion_level: float 0..1 — how confused the student seems\n'
+                '- uncertainty_markers: int — count of uncertainty phrases\n'
+                '- misconception_detected: bool — see rules above\n'
+                '- misconception_detail: string|null — what is wrong and what is correct\n'
+                '- emotional_state: "confident"|"curious"|"confused"|"frustrated"|"neutral"\n'
+                '- suggested_approach: "explain_simply"|"provide_examples"|"use_analogy"|"show_code"|"ask_questions"|"correct_misconception"\n'
+                '- mode_suggestion: string|null — "socratic" if misconception or confusion detected\n'
+                '- confidence: float 0..1 — your confidence in this analysis'
             ),
         ),
         (
