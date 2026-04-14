@@ -1,8 +1,11 @@
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import useAuth from '../hooks/useAuth';
 
 export default function Features() {
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const ctaPath = user ? '/chat' : '/login';
   return (
     <section className="view active" id="features">
       <div className="features-container">
@@ -42,7 +45,7 @@ export default function Features() {
         </div>
 
         <div style={{ textAlign: 'center', marginTop: 40 }}>
-          <Link to="/login" className="btn-primary">{t('features.getStarted')}</Link>
+          <Link to={ctaPath} className="btn-primary">{t('features.getStarted')}</Link>
         </div>
       </div>
     </section>

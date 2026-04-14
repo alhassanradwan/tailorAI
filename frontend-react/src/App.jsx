@@ -15,7 +15,7 @@ import About from './pages/About';
 import './index.css';
 
 function AppRoutes() {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, currentStep } = useAuth();
 
   if (loading) {
     return (
@@ -45,7 +45,9 @@ function AppRoutes() {
       
       return hasCompletedOnboarding ? '/chat' : '/onboarding';
     }
-    return '/onboarding';
+    // If profile is not ready yet, avoid forcing users back to onboarding.
+    if (currentStep > 1) return '/chat';
+    return '/chat';
   };
 
   return (

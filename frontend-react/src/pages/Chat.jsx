@@ -34,6 +34,12 @@ const MODE_DROPDOWN_OPTIONS = [
   { value: 'supportive_socratic', label: 'Supportive Socratic' },
 ];
 
+const MAX_FILE_EXTRACT_CHARS = 7000;
+const TEXT_FILE_EXTENSIONS = new Set([
+  'txt', 'md', 'markdown', 'json', 'csv', 'tsv', 'xml', 'html', 'css', 'js', 'jsx', 'ts', 'tsx',
+  'py', 'java', 'c', 'cpp', 'h', 'hpp', 'go', 'rs', 'php', 'rb', 'sql', 'yaml', 'yml', 'ini', 'log',
+]);
+
 function normalizeToneChoice(value) {
   const v = (value || '').toString().trim().toLowerCase();
   const allowed = new Set(['auto', 'friendly', 'professional', 'socratic', 'concise']);
@@ -46,8 +52,27 @@ function normalizeModeChoice(value) {
   return allowed.has(v) ? v : 'auto';
 }
 
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function isLikelyTextFile(file) {
+  const fileName = (file?.name || '').toLowerCase();
+  const extension = fileName.includes('.') ? fileName.split('.').pop() : '';
+  const type = (file?.type || '').toLowerCase();
+
+  if (type.startsWith('text/')) return true;
+  if (type.includes('json') || type.includes('xml') || type.includes('javascript')) return true;
+  if (extension && TEXT_FILE_EXTENSIONS.has(extension)) return true;
+
+  return false;
+}
+
 export default function Chat() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { user, profile, setProfile, chatMessages, setChatMessages, saveContext, selectedTone } = useAuth();
 
   const [input, setInput] = useState('');
@@ -57,12 +82,16 @@ export default function Chat() {
   const [modeReason, setModeReason] = useState('stable understanding detected');
   const [toneChoice, setToneChoice] = useState('auto');
   const [modeChoice, setModeChoice] = useState('auto');
+  const [isListening, setIsListening] = useState(false);
+  const [attachedFile, setAttachedFile] = useState(null);
 
   // ✅ One state controls sidebar + overlay + chat layout
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const speechRecognitionRef = useRef(null);
 
   const userKey = useMemo(() => (user?.id || user?.email || 'guest'), [user?.id, user?.email]);
 
@@ -351,6 +380,118 @@ export default function Chat() {
     console.debug('[Chat badge mode]', { activeMode, modeReason });
   }, [activeMode, modeReason]);
 
+  useEffect(() => {
+    return () => {
+      if (speechRecognitionRef.current) {
+        speechRecognitionRef.current.stop();
+      }
+    };
+  }, []);
+
+  const pushLocalAgentMessage = useCallback((content) => {
+    setChatMessages((prev) => [...prev, { role: 'agent', content, timestamp: Date.now() }]);
+  }, [setChatMessages]);
+
+  const handlePickFile = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileSelected = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    if (!isLikelyTextFile(file)) {
+      setAttachedFile({
+        name: file.name,
+        size: file.size,
+        status: 'ui-only',
+        extractedChars: 0,
+        truncated: false,
+      });
+      pushLocalAgentMessage(t('chat.fileUnsupported', { fileName: file.name }));
+      return;
+    }
+
+    try {
+      const rawText = await file.text();
+      const cleanText = rawText.trim();
+      const extracted = cleanText.slice(0, MAX_FILE_EXTRACT_CHARS);
+      const truncated = cleanText.length > MAX_FILE_EXTRACT_CHARS;
+
+      setAttachedFile({
+        name: file.name,
+        size: file.size,
+        status: 'ready',
+        extractedChars: extracted.length,
+        truncated,
+      });
+
+      const prompt = t('chat.filePrompt', {
+        fileName: file.name,
+        fileContent: extracted || t('chat.fileEmptyFallback'),
+      });
+
+      setInput(prompt);
+      inputRef.current?.focus();
+      pushLocalAgentMessage(t('chat.fileReady', { fileName: file.name }));
+    } catch {
+      setAttachedFile({
+        name: file.name,
+        size: file.size,
+        status: 'error',
+        extractedChars: 0,
+        truncated: false,
+      });
+      pushLocalAgentMessage(t('chat.fileReadError', { fileName: file.name }));
+    }
+  };
+
+  const handleVoiceInput = () => {
+    const SpeechRecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognitionClass) {
+      pushLocalAgentMessage(t('chat.voiceNotSupported'));
+      return;
+    }
+
+    if (!speechRecognitionRef.current) {
+      const recognition = new SpeechRecognitionClass();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        setIsListening(true);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognition.onerror = () => {
+        setIsListening(false);
+        pushLocalAgentMessage(t('chat.voiceError'));
+      };
+
+      recognition.onresult = (evt) => {
+        const transcript = evt?.results?.[0]?.[0]?.transcript?.trim();
+        if (!transcript) return;
+        sendMessage(transcript);
+      };
+
+      speechRecognitionRef.current = recognition;
+    }
+
+    if (isListening) {
+      speechRecognitionRef.current.stop();
+      return;
+    }
+
+    speechRecognitionRef.current.lang = i18n.language?.startsWith('ar') ? 'ar-SA' : 'en-US';
+    speechRecognitionRef.current.start();
+  };
+
   return (
     <div className={`chat-view-with-sidebar ${sidebarOpen ? '' : 'sidebar-collapsed'}`}>
       <Sidebar
@@ -455,26 +596,79 @@ export default function Chat() {
         )}
 
         <form className="chat-input-container" onSubmit={(e) => { e.preventDefault(); sendMessage(input); }}>
-          <textarea
-            ref={inputRef}
-            className="chat-input"
-            id="chatInput"
-            value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
-              e.target.style.height = 'auto';
-              e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
-            }}
-            onKeyDown={handleKeyDown}
-            placeholder={t('chat.inputPlaceholder')}
-            rows={1}
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="chat-hidden-file-input"
+            onChange={handleFileSelected}
+            accept=".txt,.md,.markdown,.json,.csv,.tsv,.xml,.html,.css,.js,.jsx,.ts,.tsx,.py,.java,.c,.cpp,.go,.rs,.php,.rb,.sql,.yaml,.yml,.ini,.log,.pdf,.doc,.docx"
           />
-          <button type="submit" className="chat-send-btn" disabled={!input.trim() || isTyping}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="22" y1="2" x2="11" y2="13" />
-              <polygon points="22 2 15 22 11 13 2 9 22 2" />
-            </svg>
-          </button>
+
+          <div className="chat-composer-row chat-composer-pill">
+            <button type="button" className="chat-icon-btn chat-plus-btn" onClick={handlePickFile} aria-label={t('chat.attachFile')}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+
+            <textarea
+              ref={inputRef}
+              className="chat-input"
+              id="chatInput"
+              value={input}
+              onChange={(e) => {
+                setInput(e.target.value);
+                e.target.style.height = 'auto';
+                e.target.style.height = Math.min(e.target.scrollHeight, 100) + 'px';
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder={t('chat.askAnything')}
+              rows={1}
+            />
+
+            <button
+              type="button"
+              className={`chat-icon-btn chat-mic-btn ${isListening ? 'is-listening' : ''}`}
+              onClick={handleVoiceInput}
+              aria-label={isListening ? t('chat.listening') : t('chat.recordVoice')}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
+                <path d="M19 10v2a7 7 0 01-14 0v-2" />
+                <line x1="12" y1="19" x2="12" y2="23" />
+                <line x1="8" y1="23" x2="16" y2="23" />
+              </svg>
+            </button>
+
+            <button
+              type="submit"
+              className="chat-send-btn chat-send-action-btn"
+              aria-label={t('chat.send')}
+              disabled={isTyping}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="22" y1="2" x2="11" y2="13" />
+                <polygon points="22 2 15 22 11 13 2 9 22 2" />
+              </svg>
+              <span>{t('chat.send')}</span>
+            </button>
+          </div>
+
+          {attachedFile && (
+            <div className="chat-file-pill" title={attachedFile.name}>
+              <strong>{attachedFile.name}</strong>
+              <span>{formatFileSize(attachedFile.size)}</span>
+              {attachedFile.status === 'ready' && (
+                <span>
+                  {attachedFile.extractedChars} {t('chat.charsExtracted')}
+                  {attachedFile.truncated ? ` (${t('chat.truncated')})` : ''}
+                </span>
+              )}
+              {attachedFile.status === 'ui-only' && <span>{t('chat.uiOnly')}</span>}
+              {attachedFile.status === 'error' && <span>{t('chat.readFailed')}</span>}
+            </div>
+          )}
         </form>
       </div>
     </div>

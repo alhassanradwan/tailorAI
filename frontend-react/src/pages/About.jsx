@@ -1,8 +1,11 @@
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import useAuth from '../hooks/useAuth';
 
 export default function About() {
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const ctaPath = user ? '/chat' : '/login';
   return (
     <section className="view active" id="about">
       <div className="about-container" style={{ maxWidth: 900, margin: '0 auto', padding: '4rem 2rem', textAlign: 'center' }}>
@@ -37,7 +40,7 @@ export default function About() {
           <p style={{ color: 'var(--text-secondary)' }}>{t('about.projectNote')}</p>
         </div>
 
-        <Link to="/login" className="btn-primary btn-large">{t('about.cta')}</Link>
+        <Link to={ctaPath} className="btn-primary btn-large">{t('about.cta')}</Link>
       </div>
     </section>
   );
