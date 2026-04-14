@@ -23,6 +23,10 @@ class Config:
     # MongoDB settings
     MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
     MONGODB_DB_NAME = os.getenv('MONGODB_DB_NAME', 'adaptiveai')
+    # Keep Atlas SRV DNS + initial handshake timeout practical on home networks
+    MONGODB_SERVER_SELECTION_TIMEOUT_MS = int(os.getenv('MONGODB_SERVER_SELECTION_TIMEOUT_MS', '10000'))
+    MONGODB_CONNECT_TIMEOUT_MS = int(os.getenv('MONGODB_CONNECT_TIMEOUT_MS', '10000'))
+    MONGODB_SOCKET_TIMEOUT_MS = int(os.getenv('MONGODB_SOCKET_TIMEOUT_MS', '10000'))
     
     # Admin credentials
     ADMIN_EMAIL = 'hassangrdwan@gmail.com'

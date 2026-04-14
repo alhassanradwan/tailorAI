@@ -27,8 +27,10 @@ class Database:
         client = MongoClient(
             uri,
             maxPoolSize=10,              # M0 free tier allows 100 connections
-            serverSelectionTimeoutMS=2000,  # Fast fail if DB unavailable
-            connectTimeoutMS=2000,
+            # Atlas SRV lookups can exceed 2s on some networks; keep this configurable.
+            serverSelectionTimeoutMS=Config.MONGODB_SERVER_SELECTION_TIMEOUT_MS,
+            connectTimeoutMS=Config.MONGODB_CONNECT_TIMEOUT_MS,
+            socketTimeoutMS=Config.MONGODB_SOCKET_TIMEOUT_MS,
             retryWrites=True,
         )
         client.admin.command('ping')
