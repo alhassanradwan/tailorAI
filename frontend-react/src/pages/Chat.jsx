@@ -18,6 +18,34 @@ const SUGGESTIONS = {
 const STORAGE_PREFIX = 'adaptiveai';
 const profilePicKey = (userKey) => `${STORAGE_PREFIX}:${userKey}:profilePic`;
 
+const TONE_DROPDOWN_OPTIONS = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'friendly', label: 'Friendly' },
+  { value: 'professional', label: 'Professional' },
+  { value: 'socratic', label: 'Socratic' },
+  { value: 'concise', label: 'Concise' },
+];
+
+const MODE_DROPDOWN_OPTIONS = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'direct', label: 'Direct' },
+  { value: 'supportive', label: 'Supportive' },
+  { value: 'socratic', label: 'Socratic' },
+  { value: 'supportive_socratic', label: 'Supportive Socratic' },
+];
+
+function normalizeToneChoice(value) {
+  const v = (value || '').toString().trim().toLowerCase();
+  const allowed = new Set(['auto', 'friendly', 'professional', 'socratic', 'concise']);
+  return allowed.has(v) ? v : 'auto';
+}
+
+function normalizeModeChoice(value) {
+  const v = (value || '').toString().trim().toLowerCase();
+  const allowed = new Set(['auto', 'direct', 'supportive', 'socratic', 'supportive_socratic']);
+  return allowed.has(v) ? v : 'auto';
+}
+
 export default function Chat() {
   const { t } = useTranslation();
   const { user, profile, setProfile, chatMessages, setChatMessages, saveContext, selectedTone } = useAuth();
@@ -27,6 +55,8 @@ export default function Chat() {
   const [currentSession, setCurrentSession] = useState(null);
   const [activeMode, setActiveMode] = useState('direct');
   const [modeReason, setModeReason] = useState('stable understanding detected');
+  const [toneChoice, setToneChoice] = useState('auto');
+  const [modeChoice, setModeChoice] = useState('auto');
 
   // ✅ One state controls sidebar + overlay + chat layout
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -186,6 +216,15 @@ export default function Chat() {
         skill_level: profile?.python || profile?.estimated_skill_level || 'intermediate',
         learning_tone: profile?.tone || 'Friendly',
         strongest_domain: profile?.strongestDomain || profile?.major || 'general',
+        force_tone: toneChoice === 'auto' ? '' : toneChoice,
+        force_tutoring_mode: modeChoice === 'auto' ? '' : modeChoice,
+        adaptive_preference: modeChoice === 'auto' ? '' : modeChoice,
+        conversation_preferences: {
+          ...(profile?.conversation_preferences || {}),
+          preferred_tone: toneChoice === 'auto' ? '' : (toneChoice === 'professional' ? 'formal' : toneChoice),
+          preferred_length: toneChoice === 'concise' ? 'short' : ((profile?.conversation_preferences || {}).preferred_length || ''),
+          adaptive_preference: modeChoice === 'auto' ? '' : modeChoice,
+        },
       };
 
       const { data } = await api.post('/chat/groq', {
@@ -247,12 +286,66 @@ export default function Chat() {
     ? profile.domain_analysis.strongest_domain?.split(' ')[0]
     : 'General';
 
-  const profileTone = profile?.tone || profile?.preferences?.learning_style || 'Friendly';
+  useEffect(() => {
+    const prefToneRaw =
+      profile?.conversation_preferences?.preferred_tone
+      || profile?.tone
+      || profile?.preferences?.learning_style
+      || 'auto';
+    const prefTone = prefToneRaw.toString().trim().toLowerCase();
+    const mappedTone = prefTone === 'formal' ? 'professional' : prefTone;
+    setToneChoice(normalizeToneChoice(mappedTone));
 
-  const prettyMode = activeMode
-    .split('_')
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ');
+    const prefModeRaw =
+      profile?.conversation_preferences?.adaptive_preference
+      || profile?.adaptive_preference
+      || 'auto';
+    setModeChoice(normalizeModeChoice(prefModeRaw));
+  }, [
+    profile?.conversation_preferences?.preferred_tone,
+    profile?.conversation_preferences?.adaptive_preference,
+    profile?.adaptive_preference,
+    profile?.tone,
+    profile?.preferences?.learning_style,
+  ]);
+
+  const handleToneChange = (event) => {
+    const next = normalizeToneChoice(event.target.value);
+    setToneChoice(next);
+    setProfile((prev) => {
+      if (!prev) return prev;
+      const mappedTone = next === 'professional' ? 'formal' : (next === 'auto' ? '' : next);
+      return {
+        ...prev,
+        conversation_preferences: {
+          ...(prev.conversation_preferences || {}),
+          preferred_tone: mappedTone,
+          preferred_length: next === 'concise' ? 'short' : ((prev.conversation_preferences || {}).preferred_length || ''),
+        },
+      };
+    });
+  };
+
+  const handleModeChange = (event) => {
+    const next = normalizeModeChoice(event.target.value);
+    setModeChoice(next);
+    setProfile((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        adaptive_preference: next === 'auto' ? '' : next,
+        conversation_preferences: {
+          ...(prev.conversation_preferences || {}),
+          adaptive_preference: next === 'auto' ? '' : next,
+        },
+      };
+    });
+
+    if (next !== 'auto') {
+      setActiveMode(next);
+      setModeReason('user selected tutoring mode');
+    }
+  };
 
   useEffect(() => {
     console.debug('[Chat badge mode]', { activeMode, modeReason });
@@ -291,8 +384,22 @@ export default function Chat() {
             <div className="chat-header-stats">
               <span className="stat-chip">{profileScore}</span>
               <span className="stat-chip">{profileStrongest}</span>
-              <span className="stat-chip">{profileTone}</span>
-              <span className="stat-chip" title={modeReason}>{t('chat.modeLabel')}: {prettyMode}</span>
+              <label className="header-inline-control" title="Choose tone">
+                <span className="header-inline-label">Tone:</span>
+                <select value={toneChoice} onChange={handleToneChange} aria-label="Tone selector">
+                  {TONE_DROPDOWN_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="header-inline-control" title={modeReason}>
+                <span className="header-inline-label">Mode:</span>
+                <select value={modeChoice} onChange={handleModeChange} aria-label="Mode selector">
+                  {MODE_DROPDOWN_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </label>
             </div>
           </div>
         </div>

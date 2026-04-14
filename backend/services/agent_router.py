@@ -219,6 +219,26 @@ def _format_structured_fallback(text: str, structured_intent: str | None) -> tup
     return content, False, None
 
 
+def _normalize_forced_mode(value: str) -> str:
+    raw = (value or '').strip().lower()
+    if raw in ('', 'auto', 'automatic'):
+        return ''
+    if raw == 'guided':
+        return 'socratic'
+    if raw in ('direct', 'supportive', 'socratic', 'supportive_socratic'):
+        return raw
+    return ''
+
+
+def _normalize_forced_tone(value: str) -> str:
+    raw = (value or '').strip().lower()
+    if raw in ('', 'auto', 'automatic'):
+        return ''
+    if raw in ('friendly', 'professional', 'socratic', 'concise'):
+        return raw
+    return ''
+
+
 def _extract_topics(message: str):
     lower = message.lower()
     return [t for t, p in _TOPIC_PATTERNS.items() if re.search(p, lower, re.I)]
@@ -666,13 +686,24 @@ class DeepAgentRouter:
         length_inst = ''
         pt = prefs.get('preferred_tone', '')
         pl = prefs.get('preferred_length', '')
-        if pt == 'friendly':
+        forced_tone = _normalize_forced_tone(profile.get('force_tone'))
+
+        if forced_tone == 'friendly':
             tone_inst = 'CRITICAL: Use a FRIENDLY, casual tone — warm, contractions, like a helpful friend.'
-        elif pt == 'formal':
+        elif forced_tone == 'professional':
             tone_inst = 'CRITICAL: Use a FORMAL, professional, academic tone.'
-        if pl == 'short':
+        elif forced_tone == 'socratic':
+            tone_inst = 'CRITICAL: Use a Socratic teaching voice: ask guiding questions before direct conclusions.'
+        elif forced_tone == 'concise':
+            length_inst = 'CRITICAL: Keep responses concise and direct. Prefer short paragraphs and compact bullets.'
+
+        if not tone_inst and pt == 'friendly':
+            tone_inst = 'CRITICAL: Use a FRIENDLY, casual tone — warm, contractions, like a helpful friend.'
+        elif not tone_inst and pt == 'formal':
+            tone_inst = 'CRITICAL: Use a FORMAL, professional, academic tone.'
+        if not length_inst and pl == 'short':
             length_inst = 'CRITICAL: Keep responses to 2-4 sentences MAX. Be brief and direct.'
-        elif pl == 'detailed':
+        elif not length_inst and pl == 'detailed':
             length_inst = 'CRITICAL: Provide DETAILED responses. Go deep, cover edge cases.'
 
         # adaptation directives
@@ -791,6 +822,18 @@ Only use what is directly relevant to the student's question.
         recs = analysis.get('recommendations', {})
         response_mode = recs.get('tutoring_mode') or knowledge_state.get('current_adaptations', {}).get('tutoring_mode', 'direct')
         response_reason = recs.get('mode_reason') or knowledge_state.get('current_adaptations', {}).get('mode_reason', 'stable understanding detected')
+
+        forced_mode = _normalize_forced_mode(
+            profile.get('force_tutoring_mode')
+            or profile.get('adaptive_preference')
+            or (profile.get('conversation_preferences', {}) or {}).get('adaptive_preference')
+        )
+        if forced_mode:
+            response_mode = forced_mode
+            response_reason = 'user selected tutoring mode'
+            recs['tutoring_mode'] = response_mode
+            recs['mode_reason'] = response_reason
+
         logger.debug(
             "DeepAgentRouter.generate pre-prompt mode=%s reason=%s analysis_mode=%s",
             response_mode,

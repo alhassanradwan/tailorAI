@@ -1567,6 +1567,48 @@ input[type="range"]::-moz-range-thumb {
   font-weight: 600;
 }
 
+.header-inline-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.625rem;
+  background: rgba(156, 163, 175, 0.1);
+  border: 1px solid rgba(156, 163, 175, 0.2);
+  border-radius: var(--radius-sm);
+  color: var(--primary);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.header-inline-label {
+  color: var(--text-secondary);
+}
+
+.header-inline-control select {
+  width: fit-content;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+  outline: none;
+  cursor: pointer;
+}
+
+.header-inline-control select:focus {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.header-inline-control select option {
+  background: #0f111a;
+  color: #f3f4f6;
+}
+
 .chat-messages {
   flex: 1;
   overflow-y: auto;

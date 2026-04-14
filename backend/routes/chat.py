@@ -96,6 +96,53 @@ def chat_groq():
         # 1. Load server-side knowledge state
         ks = KnowledgeStateService.get(user_id)
 
+        req_mode_pref = (
+            profile.get('force_tutoring_mode')
+            or profile.get('adaptive_preference')
+            or (profile.get('conversation_preferences', {}) or {}).get('adaptive_preference')
+            or ''
+        )
+        req_mode_pref = req_mode_pref.strip().lower()
+        if req_mode_pref in {'auto', 'automatic'}:
+            req_mode_pref = ''
+        if req_mode_pref == 'guided':
+            req_mode_pref = 'socratic'
+
+        req_tone_pref = (
+            profile.get('force_tone')
+            or (profile.get('conversation_preferences', {}) or {}).get('preferred_tone')
+            or ''
+        )
+        req_tone_pref = req_tone_pref.strip().lower()
+        if req_tone_pref in {'auto', 'automatic'}:
+            req_tone_pref = ''
+        if req_tone_pref == 'professional':
+            req_tone_pref = 'formal'
+
+        req_length_pref = (profile.get('conversation_preferences', {}) or {}).get('preferred_length', '').strip().lower()
+        if req_length_pref in {'auto', 'automatic'}:
+            req_length_pref = ''
+        if profile.get('force_tone', '').strip().lower() == 'concise':
+            req_length_pref = 'short'
+
+        conv = ks.get('conversation_preferences', {}) or {}
+        changed = False
+        if req_mode_pref in {'', 'direct', 'supportive', 'socratic', 'supportive_socratic'} and conv.get('adaptive_preference') != req_mode_pref:
+            conv['adaptive_preference'] = req_mode_pref
+            changed = True
+        if req_tone_pref in {'', 'friendly', 'formal', 'socratic'} and conv.get('preferred_tone') != req_tone_pref:
+            conv['preferred_tone'] = req_tone_pref
+            changed = True
+        if req_length_pref in {'', 'short', 'detailed'} and conv.get('preferred_length') != req_length_pref:
+            conv['preferred_length'] = req_length_pref
+            changed = True
+        if changed:
+            ks['conversation_preferences'] = conv
+            try:
+                KnowledgeStateService.save(user_id, ks)
+            except Exception as e:
+                logger.warning("Failed to persist tone/mode preferences: %s", e)
+
         # 2. Run full pipeline: analyse → route → prompt → Groq
         result = DeepAgentRouter.generate(
             message=message,
