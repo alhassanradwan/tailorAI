@@ -105,7 +105,10 @@ def test_unstructured_prompt_routes_to_native(monkeypatch):
 
     assert calls["langchain"] == 0
     assert calls["native"] == 1
-    assert result["response"] == "native-response"
+    assert result["response"] == "Explanation\nnative-response"
+    assert result["generation"]["path"] == "native_groq"
+    assert result["generation"]["formatter_applied"] is True
+    assert result["generation"]["formatter_reason"] == "general_structure"
 
 
 def test_comparison_prompt_routes_to_langchain(monkeypatch):
@@ -177,4 +180,8 @@ def test_structured_fallback_routes_to_native(monkeypatch):
 
     assert calls["langchain"] == 1
     assert calls["native"] == 1
-    assert result["response"] == "native-response"
+    assert "Explanation\nnative-response" in result["response"]
+    assert "\n\nComparison\n" in result["response"]
+    assert result["generation"]["path"] == "native_groq"
+    assert result["generation"]["formatter_applied"] is True
+    assert result["generation"]["formatter_reason"] == "comparison_structure"

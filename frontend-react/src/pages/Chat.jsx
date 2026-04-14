@@ -213,7 +213,20 @@ export default function Chat() {
       }
     } catch (err) {
       setIsTyping(false);
-      const errMsg = { role: 'agent', content: 'Sorry, I encountered an error. Please try again.', timestamp: Date.now() };
+      const status = err?.response?.status;
+      const backendError = err?.response?.data?.error;
+      const backendMsg = err?.response?.data?.msg;
+      let friendlyError = 'Sorry, I encountered an error. Please try again.';
+
+      if (status === 401) {
+        friendlyError = 'Your session expired. Please log in again, then resend your message.';
+      } else if (typeof backendError === 'string' && backendError.trim()) {
+        friendlyError = backendError;
+      } else if (typeof backendMsg === 'string' && backendMsg.trim()) {
+        friendlyError = backendMsg;
+      }
+
+      const errMsg = { role: 'agent', content: friendlyError, timestamp: Date.now() };
       setChatMessages((prev) => [...prev, errMsg]);
       console.error('Chat error:', err);
     }

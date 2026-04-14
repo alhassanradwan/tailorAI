@@ -163,6 +163,62 @@ _UNCERTAINTY_INDICATORS = [
 ]
 
 
+def _looks_structured_response(text: str) -> bool:
+    content = (text or '').strip()
+    if not content:
+        return False
+    has_heading = bool(re.search(r'(?im)^\s{0,3}(?:#{1,6}\s+|[A-Za-z][A-Za-z ]{2,}:\s*$)', content))
+    bullet_lines = re.findall(r'(?im)^\s*[-*]\s+', content)
+    numbered_lines = re.findall(r'(?im)^\s*\d+\.\s+', content)
+    return has_heading or len(bullet_lines) >= 2 or len(numbered_lines) >= 2
+
+
+def _split_sentences_local(text: str) -> list[str]:
+    chunks = re.split(r'(?<=[.!?])\s+', (text or '').strip())
+    return [c.strip() for c in chunks if c.strip()]
+
+
+def _format_general_response(text: str) -> tuple[str, bool, str | None]:
+    content = (text or '').strip()
+    if not content:
+        return content, False, None
+    if _looks_structured_response(content):
+        return content, False, None
+
+    sentences = _split_sentences_local(content)
+    if len(sentences) <= 2:
+        return f"Explanation\n{content}", True, 'general_structure'
+
+    intro = sentences[0]
+    bullets = sentences[1:4]
+    bullet_text = '\n'.join([f"- {s}" for s in bullets])
+    formatted = (
+        "Explanation\n"
+        f"{intro}\n\n"
+        "Key Points\n"
+        f"{bullet_text}"
+    )
+    return formatted, True, 'general_structure'
+
+
+def _format_structured_fallback(text: str, structured_intent: str | None) -> tuple[str, bool, str | None]:
+    content = (text or '').strip()
+    if not content:
+        return content, False, None
+
+    lower = content.lower()
+    if structured_intent == 'comparison' and 'comparison' not in lower:
+        return f"Explanation\n{content}\n\nComparison\n- Option A vs Option B: compare by accuracy, speed, complexity, and data requirements.", True, 'comparison_structure'
+    if structured_intent == 'examples' and 'examples' not in lower:
+        return f"Explanation\n{content}\n\nExamples\n- Example 1: Apply this on a simple dataset.\n- Example 2: Apply this on noisy real-world data.", True, 'examples_structure'
+    if structured_intent == 'use_cases' and ('when to use' not in lower or 'when not to use' not in lower):
+        return f"Explanation\n{content}\n\nWhen to Use\n- Use when assumptions and data conditions fit.\n\nWhen Not to Use\n- Avoid when assumptions break or simpler baselines perform similarly.", True, 'use_cases_structure'
+    if structured_intent == 'multi_idea' and ('options' not in lower and 'approaches' not in lower):
+        return f"Explanation\n{content}\n\nOptions\n- Option 1: Fast to implement\n- Option 2: Balanced tradeoff\n- Option 3: Highest potential performance\n\nRecommendation\nChoose based on your latency, accuracy, and maintenance constraints.", True, 'multi_idea_structure'
+
+    return content, False, None
+
+
 def _extract_topics(message: str):
     lower = message.lower()
     return [t for t, p in _TOPIC_PATTERNS.items() if re.search(p, lower, re.I)]
@@ -174,9 +230,17 @@ def _detect_complexity(message: str):
     for lvl, patterns in _COMPLEXITY_PATTERNS.items():
         for p in patterns:
             scores[lvl] += len(re.findall(p, lower, re.I))
-    if max(scores.values()) == 0:
+    max_score = max(scores.values())
+    if max_score == 0:
         return 'intermediate'
-    return max(scores, key=scores.get)
+
+    # Prefer advanced on ties so mathematically dense prompts are not
+    # down-classified when they also contain wording like "when to use".
+    tied = [lvl for lvl, score in scores.items() if score == max_score]
+    for preferred in ('advanced', 'intermediate', 'beginner'):
+        if preferred in tied:
+            return preferred
+    return 'intermediate'
 
 
 def _detect_question_type(message: str):
@@ -235,7 +299,9 @@ def _build_recommendations(topics, complexity, qtype, ks, meta):
     for t in topics:
         td = topics_map.get(t, {})
         cnt = td.get('count', 0) if isinstance(td, dict) else 0
-        if complexity == 'advanced' and cnt >= 3 and t not in strong:
+        # Count the current turn (not yet persisted) when promoting strength.
+        mentions_after_this_turn = cnt + 1
+        if complexity == 'advanced' and mentions_after_this_turn >= 3 and t not in strong:
             recs['add_to_strong_topics'].append(t)
         elif complexity in ('beginner', 'intermediate') and t not in weak and t not in strong:
             recs['add_to_weak_topics'].append(t)
@@ -765,7 +831,7 @@ Only use what is directly relevant to the student's question.
             recent_context=recent_context,
             user_message=message,
         )
-        structured_intents = {'comparison', 'examples', 'use_cases'}
+        structured_intents = {'comparison', 'examples', 'use_cases', 'multi_idea'}
         use_langchain_generation = (
             Config.USE_LANGCHAIN
             and generation_plan.get('structured_response_required', False)
@@ -803,6 +869,7 @@ Only use what is directly relevant to the student's question.
                     complexity=analysis.get('complexity', 'intermediate'),
                     uncertainty_markers=(analysis.get('message_analysis', {}) or {}).get('uncertainty_markers', 0),
                     has_code=(analysis.get('message_analysis', {}) or {}).get('has_code', False),
+                    rag_context=rag_context or '',
                 )
 
                 if lc_result.get('used') and lc_result.get('response'):
@@ -820,6 +887,16 @@ Only use what is directly relevant to the student's question.
                         'analysis': analysis,
                         'tutoring_mode': response_mode,
                         'mode_reason': response_reason,
+                        'generation': {
+                            'path': 'langchain',
+                            'langchain_used': True,
+                            'structured_required': bool(generation_plan.get('structured_response_required', False)),
+                            'structured_intent': generation_plan.get('structured_intent'),
+                            'sections': lc_result.get('sections', []),
+                            'formatter_applied': bool(lc_result.get('formatter_applied', False)),
+                            'formatter_reason': lc_result.get('formatter_reason'),
+                            'fallback_reason': None,
+                        },
                     }
 
                 generation_fallback_reason = lc_result.get('error', 'unknown')
@@ -847,6 +924,19 @@ Only use what is directly relevant to the student's question.
             logger.error("Groq API call failed: %s", e)
             return {'success': False, 'error': str(e)}
 
+        # Always enforce baseline organization on native responses.
+        formatter_applied = False
+        formatter_reason = None
+        structured_intent = generation_plan.get('structured_intent')
+        if generation_plan.get('structured_response_required', False):
+            response_text, formatter_applied, formatter_reason = _format_structured_fallback(
+                response_text,
+                structured_intent,
+            )
+
+        if not formatter_applied:
+            response_text, formatter_applied, formatter_reason = _format_general_response(response_text)
+
         elapsed = round((time.time() - t0) * 1000)
         print('generation_path:', 'fallback')
         print('generation_fallback_reason:', generation_fallback_reason)
@@ -862,4 +952,14 @@ Only use what is directly relevant to the student's question.
             'analysis': analysis,
             'tutoring_mode': response_mode,
             'mode_reason': response_reason,
+            'generation': {
+                'path': 'native_groq',
+                'langchain_used': False,
+                'structured_required': bool(generation_plan.get('structured_response_required', False)),
+                'structured_intent': generation_plan.get('structured_intent'),
+                'sections': generation_plan.get('sections', []),
+                'formatter_applied': formatter_applied,
+                'formatter_reason': formatter_reason,
+                'fallback_reason': generation_fallback_reason,
+            },
         }

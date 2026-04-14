@@ -29,6 +29,25 @@ app.config.from_object(Config)
 # Initialize JWT
 jwt = JWTManager(app)
 
+
+@jwt.unauthorized_loader
+def jwt_missing_token(reason):
+    logger.warning("JWT unauthorized: %s", reason)
+    return jsonify({"success": False, "error": reason}), 401
+
+
+@jwt.invalid_token_loader
+def jwt_invalid_token(reason):
+    logger.warning("JWT invalid token: %s", reason)
+    return jsonify({"success": False, "error": reason}), 422
+
+
+@jwt.expired_token_loader
+def jwt_expired_token(jwt_header, jwt_payload):
+    subject = jwt_payload.get('sub') if isinstance(jwt_payload, dict) else None
+    logger.warning("JWT expired token for subject=%s", subject)
+    return jsonify({"success": False, "error": "Token has expired"}), 401
+
 # Enable CORS for frontend
 CORS(app, origins=Config.CORS_ORIGINS, supports_credentials=True)
 

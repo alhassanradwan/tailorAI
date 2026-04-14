@@ -149,6 +149,7 @@ def chat_groq():
                     "method": analysis.get('analysis_method', 'keywords'),
                     "mode": mode,
                     "mode_reason": reason,
+                    "generation": result.get('generation', {}),
                 },
                 "tutoring_mode": mode,
                 "mode_reason": reason,
@@ -191,6 +192,7 @@ def chat_groq():
                 "mode": mode,
                 "mode_reason": reason,
             },
+            "generation": result.get('generation', {}),
         }), 200
 
     except Exception as e:

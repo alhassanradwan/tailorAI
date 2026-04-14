@@ -104,6 +104,9 @@ def select_output_plan(
     use_cases_intent = bool(
         re.search(r'\b(when to use|when should i use|use case|use cases|where to use)\b', msg)
     )
+    multi_idea_intent = bool(
+        re.search(r'\b(ideas|options|approaches|ways|alternatives|multiple|different methods|tradeoffs?)\b', msg)
+    )
 
     structured_intent = None
     if comparison_intent:
@@ -112,6 +115,8 @@ def select_output_plan(
         structured_intent = 'use_cases'
     elif examples_intent:
         structured_intent = 'examples'
+    elif multi_idea_intent:
+        structured_intent = 'multi_idea'
 
     structured_response_required = structured_intent is not None
     visual_intent = any(k in msg for k in ('visual', 'diagram', 'flow', 'flowchart', 'chart', 'table'))
@@ -129,6 +134,9 @@ def select_output_plan(
     elif structured_intent == 'use_cases':
         include.append('use_cases')
         rationale.append('structured intent: use-cases breakdown required')
+    elif structured_intent == 'multi_idea':
+        include.append('options')
+        rationale.append('structured intent: multiple organized options required')
     elif has_code or (qt in {'code_request', 'debugging', 'how_to'} and not visual_intent):
         include.append('code')
         rationale.append('code requested or implementation-oriented question')
@@ -159,6 +167,8 @@ def select_output_plan(
         include_final.append('examples')
     elif structured_intent == 'use_cases':
         include_final.append('use_cases')
+    elif structured_intent == 'multi_idea':
+        include_final.append('options')
     else:
         support_priority = ['code', 'visual', 'table', 'analogy']
         selected_support = next((item for item in support_priority if item in include), None)
@@ -201,6 +211,14 @@ def response_contract(question_type: str, sections: list[str]) -> str:
             '2) When to use (bullet list). '
             '3) When not to use (bullet list). '
             '4) Optional quick rule of thumb. Use clear headings.'
+        )
+
+    if 'options' in sec:
+        return (
+            'FORMAT CONTRACT: 1) Short context/setup. '
+            '2) Options section with 3-5 clearly named options as bullets or numbered list. '
+            '3) For each option, include when to use and one tradeoff. '
+            '4) End with a concise recommendation.'
         )
 
     if qtype == 'comparison' or 'table' in sec:
@@ -246,6 +264,7 @@ def get_tutor_prompt_template():
                 'Misconceptions: {misconceptions}\n'
                 'Recent context: {recent_context}\n'
                 'Topic context: {topic_context}\n'
+                'Retrieved knowledge graph context: {rag_context}\n'
                 'Output plan sections: {output_sections}\n'
                 'Output selection rationale: {output_rationale}\n'
                 'Response contract: {response_contract}\n'
@@ -269,7 +288,9 @@ def get_tutor_prompt_template():
                 '15) For Python examples, follow PEP 8 style and prefer type hints when helpful for clarity.\n'
                 '16) For advanced learners, keep technical depth high and avoid oversimplifying unless the learner asks to simplify.\n'
                 '17) Never hallucinate APIs, libraries, papers, or facts; when uncertain, state uncertainty briefly and stay correct.\n'
-                '18) Keep responses practical and accurate.'
+                '18) Keep responses practical and accurate.\n'
+                '19) If retrieved knowledge graph context is present, use it to ground your explanation and examples.\n'
+                '20) Do not copy retrieved context verbatim; teach it in your own words and only use relevant parts.'
             ),
         ),
         ('human', '{user_message}'),
