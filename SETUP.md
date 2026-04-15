@@ -1,16 +1,29 @@
 # AdaptiveAI - Setup & Installation Guide
 
 ## Prerequisites
-- Python 3.9 or higher
+- **Python 3.11** (3.11.x required — 3.12+ / 3.14 cause MongoDB TLS and Pydantic errors)
 - MongoDB (local or MongoDB Atlas)
-- OpenAI API key
+- Groq API key
 - Modern web browser
 
 ## Backend Setup
 
-### 1. Install Python Dependencies
+### 1. Create Virtual Environment (Python 3.11)
+
+> **Important:** The project requires Python 3.11. Python 3.14 causes MongoDB Atlas TLS handshake failures.
+
 ```powershell
 cd backend
+
+# Remove old venv if it exists (created with wrong Python version)
+if (Test-Path ./venv) { Remove-Item -Recurse -Force ./venv }
+
+# Create new venv with Python 3.11
+py -3.11 -m venv venv
+.\venv\Scripts\Activate.ps1
+
+# Upgrade pip and install dependencies
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
@@ -22,8 +35,8 @@ Create a `.env` file in the `backend` folder:
 MONGODB_URI=mongodb://localhost:27017/
 DATABASE_NAME=adaptiveai
 
-# OpenAI API
-OPENAI_API_KEY=your-openai-api-key-here
+# Groq API
+GROQ_API_KEY=your-groq-api-key-here
 
 # JWT Configuration
 JWT_SECRET_KEY=your-super-secret-jwt-key-here-change-this
@@ -37,7 +50,7 @@ FLASK_ENV=development
 FLASK_DEBUG=True
 ```
 
-**Important**: Replace `your-openai-api-key-here` with your actual OpenAI API key from https://platform.openai.com/api-keys
+**Important**: Replace `your-groq-api-key-here` with your actual Groq API key.
 
 **Security**: Change `JWT_SECRET_KEY` to a random secure string for production.
 
@@ -64,23 +77,15 @@ python app.py
 
 Backend will start on: `http://localhost:5000`
 
-## Frontend Setup
+## Frontend Setup (React)
 
-### Option 1: Live Server (Recommended)
-1. Open VS Code
-2. Install "Live Server" extension
-3. Right-click `frontend/index.html`
-4. Click "Open with Live Server"
-
-Frontend will open at: `http://127.0.0.1:5500`
-
-### Option 2: Python HTTP Server
 ```powershell
-cd frontend
-python -m http.server 5500
+cd frontend-react
+npm install
+npm run dev
 ```
 
-Then open: `http://localhost:5500`
+Frontend will run at: `http://localhost:5173`
 
 ## Verify Installation
 
@@ -104,12 +109,12 @@ Should see:
 ```
 
 ### 2. Check Frontend
-Open `http://127.0.0.1:5500/frontend/index.html`
+Open `http://localhost:5173`
 
 Should see:
-- Space-themed landing page
-- Login/Sign Up tabs
-- Animated stars background
+- React app with Login/Sign Up flow
+- Navigation and chat routes
+- Space-themed UI
 
 ### 3. Test Authentication
 1. Click "Sign Up" tab
@@ -172,16 +177,16 @@ pip install -r requirements.txt
 - Start MongoDB service: `net start MongoDB`
 - Or update `MONGODB_URI` to point to MongoDB Atlas
 
-**Error: "openai.error.AuthenticationError"**
-- Check `OPENAI_API_KEY` in `.env` file
-- Verify API key is valid at https://platform.openai.com/api-keys
+**Error: Groq authentication / model access**
+- Check `GROQ_API_KEY` in `.env` file
+- Verify key is valid in your Groq account
 
 ### Frontend won't connect to backend
 
 **Error: "Failed to fetch" in browser console**
 1. Check backend is running on port 5000
 2. Check CORS is enabled in `backend/app.py`
-3. Verify `API_BASE_URL` in `frontend/script.js` is `http://localhost:5000/api`
+3. Verify frontend API base URL resolves to `http://localhost:5000/api`
 
 **Error: 401 Unauthorized**
 - Tokens may be expired
@@ -302,17 +307,15 @@ gunicorn app:app
 ```
 
 ### Frontend (Netlify/Vercel)
-Update `API_BASE_URL` in `script.js`:
-```javascript
-const API_BASE_URL = 'https://your-backend-url.com/api';
-```
+Set frontend environment/config to call:
+`https://your-backend-url.com/api`
 
 ### Security Checklist
 - [ ] Change JWT_SECRET_KEY
 - [ ] Use environment variables for secrets
 - [ ] Enable HTTPS
 - [ ] Use MongoDB Atlas with authentication
-- [ ] Rotate OpenAI API key regularly
+- [ ] Rotate Groq API key regularly
 - [ ] Set secure CORS origins
 - [ ] Enable rate limiting
 - [ ] Add request logging
@@ -340,9 +343,9 @@ For issues or questions:
 - MongoDB: `27017`
 
 ### URLs
-- Frontend: `http://127.0.0.1:5500/frontend/index.html`
+- Frontend: `http://localhost:5173`
 - Backend API: `http://localhost:5000/api`
-- Admin Panel: `http://127.0.0.1:5500/frontend/admin.html`
+- Admin Panel: `http://localhost:5173/admin`
 
 ### Credentials
 - Admin Email: `hassangrdwan@gmail.com`
@@ -350,8 +353,28 @@ For issues or questions:
 - Test User: Any email/password combo
 
 ### Key Directories
-- Backend: `c:\Users\Lenovo\Desktop\AdaptiveAI\backend`
-- Frontend: `c:\Users\Lenovo\Desktop\AdaptiveAI\frontend`
+- Backend: `c:\Users\Lenovo\Desktop\AdaptiveAI\tailorAI\backend`
+- Frontend: `c:\Users\Lenovo\Desktop\AdaptiveAI\tailorAI\frontend-react`
+
+## Active and Legacy API Notes
+
+### Active chat route
+- `POST /api/chat/groq`
+
+### Legacy chat route (disabled)
+- `POST /api/chat/message` returns `410`
+
+### Active analytics routes
+- `GET /api/analytics/summary`
+- `GET /api/analytics/mastery-map`
+- `GET /api/analytics/misconceptions`
+- `GET /api/analytics/engagement`
+
+### Legacy analytics routes (disabled)
+- `POST /api/analytics/save` returns `410`
+- `GET /api/analytics/user/<email>` returns `410`
+- `GET /api/analytics/progress/<email>` returns `410`
+- `POST /api/analytics/webhook/n8n` returns `410`
 
 ### MongoDB
 - Database: `adaptiveai`

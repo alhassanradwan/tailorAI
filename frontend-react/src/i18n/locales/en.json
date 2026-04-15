@@ -1,0 +1,309 @@
+{
+  "common": {
+    "appName": "TailorAI",
+    "english": "English",
+    "arabic": "Arabic",
+    "language": "Language",
+    "loading": "Loading...",
+    "student": "Student",
+    "continue": "Continue",
+    "back": "Back",
+    "startLearning": "Start Learning"
+  },
+  "navbar": {
+    "features": "Features",
+    "about": "About",
+    "admin": "Admin"
+  },
+  "languageSwitcher": {
+    "ariaLabel": "Select language"
+  },
+  "sidebar": {
+    "toggle": "Toggle sidebar",
+    "newChat": "New Chat",
+    "today": "Today",
+    "last30Days": "Last 30 Days",
+    "messages": "messages",
+    "noHistory": "No chat history yet.",
+    "startConversation": "Start a conversation!",
+    "changePhoto": "Change Photo",
+    "analytics": "Analytics",
+    "logout": "Logout",
+    "rename": "Rename",
+    "delete": "Delete",
+    "userFallback": "User",
+    "alerts": {
+      "invalidImageType": "Please select a valid image file",
+      "imageTooLarge": "Image must be less than 2MB"
+    }
+  },
+  "login": {
+    "badge": "Multi-Agent Intelligence • Built for Modern Learners",
+    "titleLine1": "Stop Learning the Hard Way.",
+    "titleLine2": "Let AI Personalize to You",
+    "subtitle": "Traditional courses teach everyone the same way. TailorAI analyzes how YOU learn best, then personalizes every question, explanation, and challenge to match your skill level, learning style, and goals. Four specialized AI agents work together to accelerate your mastery of Data Science, ML, and Deep Learning.",
+    "tabLogin": "Login",
+    "tabSignup": "Sign Up",
+    "email": "Email",
+    "password": "Password",
+    "confirmPassword": "Confirm Password",
+    "fullName": "Full Name",
+    "loginButton": "Login",
+    "signupButton": "Create Account",
+    "loggingIn": "Logging in...",
+    "creatingAccount": "Creating account...",
+    "placeholders": {
+      "email": "you@example.com",
+      "password": "Enter your password",
+      "name": "John Doe",
+      "passwordMin": "Min 6 characters",
+      "confirmPassword": "Repeat password"
+    },
+    "errors": {
+      "missingLogin": "Please enter both email and password",
+      "missingSignup": "Please fill in all fields",
+      "passwordMismatch": "Passwords do not match",
+      "passwordShort": "Password must be at least 6 characters",
+      "loginFailed": "Login failed",
+      "signupFailed": "Signup failed"
+    }
+  },
+  "chat": {
+    "openSidebar": "Open sidebar",
+    "modeLabel": "Mode",
+    "labels": {
+      "tone": "Tone",
+      "mode": "Mode"
+    },
+    "aria": {
+      "toneSelector": "Tone selector",
+      "modeSelector": "Mode selector"
+    },
+    "tooltips": {
+      "chooseTone": "Choose tone"
+    },
+    "toneOptions": {
+      "auto": "Auto",
+      "friendly": "Friendly",
+      "professional": "Professional",
+      "socratic": "Socratic",
+      "concise": "Concise"
+    },
+    "modeOptions": {
+      "auto": "Auto",
+      "direct": "Direct",
+      "supportive": "Supportive",
+      "socratic": "Socratic",
+      "supportive_socratic": "Supportive Socratic"
+    },
+    "modeReasons": {
+      "stableUnderstanding": "stable understanding detected",
+      "userSelectedMode": "user selected tutoring mode"
+    },
+    "welcomeTitle": "Welcome, {{name}}!",
+    "welcomeSubtitle": "I'm your Personalized AI tutor. Ask me anything about Data Science, Machine Learning, or Deep Learning.",
+    "typingAlt": "Loading...",
+    "askAnything": "Ask anything",
+    "inputPlaceholder": "Just ask...",
+    "attachFile": "Add File",
+    "recordVoice": "Voice",
+    "listening": "Listening...",
+    "charsExtracted": "chars extracted",
+    "truncated": "truncated",
+    "uiOnly": "UI only",
+    "readFailed": "read failed",
+    "fileEmptyFallback": "(This file appears empty)",
+    "filePrompt": "Please read this file and explain it in a simple way.\n\nFile name: {{fileName}}\n\nFile content:\n{{fileContent}}",
+    "fileReady": "Attached {{fileName}}. I prepared a simplified prompt in the input box. Edit it if needed, then send.",
+    "fileUnsupported": "I attached {{fileName}} in the UI, but local reading currently supports only text-based files.",
+    "fileReadError": "I could not read {{fileName}} locally. Please try again.",
+    "voiceNotSupported": "Voice input is not supported in this browser yet.",
+    "voiceError": "Voice transcription stopped due to an audio recognition error.",
+    "send": "Send",
+    "identityNameResponse": "Your name is **{{name}}**.",
+    "identityLookupReason": "identity lookup request",
+    "chatError": "Sorry, I encountered an error. Please try again."
+  },
+  "analytics": {
+    "loading": "Loading Analytics...",
+    "title": "Learning Analytics",
+    "subtitle": "Track your learning progress and Personalized AI insights",
+    "noData": "No data yet. Start chatting to build your analytics!",
+    "goToChat": "Go to Chat",
+    "cards": {
+      "skillLevel": "Skill Level",
+      "questionsAsked": "Questions Asked",
+      "topicsExplored": "Topics Explored",
+      "avgMastery": "Avg Mastery"
+    },
+    "complexity": {
+      "title": "Complexity Distribution",
+      "beginner": "Beginner",
+      "intermediate": "Intermediate",
+      "advanced": "Advanced"
+    },
+    "topicMastery": "Topic Mastery",
+    "strongTopics": "Strong Topics",
+    "topicsInProgress": "Topics in Progress",
+    "noMasteredTopics": "No mastered topics yet. Keep learning!",
+    "noTopicsInProgress": "No topics in progress yet",
+    "misconceptions": "Misconceptions",
+    "noMisconceptions": "No misconceptions detected",
+    "personalization": {
+      "title": "AI Personalization",
+      "normalMode": "Normal Mode",
+      "normalDescription": "AI is providing balanced explanations tailored to your level",
+      "conciseMode": "Concise Mode",
+      "conciseDescription": "AI is giving brief, focused answers as you requested",
+      "deepDiveMode": "Deep Dive Mode",
+      "deepDiveDescription": "AI is providing thorough, in-depth explanations"
+    }
+  },
+  "onboarding": {
+    "backToSignIn": "Back to Sign In",
+    "progressComplete": "{{value}}% Complete",
+    "step1": {
+      "title": "Tell us about yourself",
+      "subtitle": "Help us personalize your learning experience",
+      "fullName": "Full Name *",
+      "major": "Major / Field of Study *",
+      "academicLevel": "Academic Level *",
+      "placeholders": {
+        "name": "Your full name",
+        "major": "e.g. Computer Science"
+      },
+      "selectLevel": "Select your level"
+    },
+    "levels": {
+      "freshman": "Freshman",
+      "sophomore": "Sophomore",
+      "junior": "Junior",
+      "senior": "Senior",
+      "graduate": "Graduate",
+      "professional": "Professional"
+    },
+    "tones": {
+      "friendly": "Friendly",
+      "professional": "Professional",
+      "socratic": "Socratic",
+      "concise": "Concise"
+    },
+    "skillLabels": {
+      "beginner": "Beginner",
+      "intermediate": "Intermediate",
+      "advanced": "Advanced"
+    },
+    "step2": {
+      "title": "Customize your experience",
+      "subtitle": "Choose your learning style and skill levels",
+      "learningStyle": "Learning Style *",
+      "pythonSkill": "Python Skill Level",
+      "mathSkill": "Mathematics Skill Level",
+      "consent": "I consent to learning analytics to improve my experience"
+    },
+    "alerts": {
+      "missingStep1": "Please fill in all required fields (Name, Major, and Academic Level)",
+      "missingTone": "Please select your learning style",
+      "missingConsent": "Please consent to learning analytics to proceed"
+    }
+  },
+  "features": {
+    "title": "Platform Features",
+    "subtitle": "Everything you need for adaptive AI-powered learning",
+    "items": {
+      "adaptiveTutor": {
+        "title": "Adaptive AI Tutor",
+        "description": "Personalizes explanations to match your skill level, learning style, and pace. The AI learns and adapts as you interact."
+      },
+      "learningAnalytics": {
+        "title": "Learning Analytics",
+        "description": "Track your progress with detailed analytics - topics explored, skill progression, complexity distribution, and more."
+      },
+      "behavioralAnalysis": {
+        "title": "Behavioral Analysis",
+        "description": "4-phase conversation analysis detects your question patterns, knowledge gaps, misconceptions, and learning preferences."
+      },
+      "personalizedApproach": {
+        "title": "Personalized Approach",
+        "description": "Choose your learning style - Friendly, Professional, Socratic, or Concise - and the AI adapts its tone and method."
+      },
+      "skillTracking": {
+        "title": "Skill Tracking",
+        "description": "Automatic skill level assessment that evolves with your conversations. Watch yourself grow from beginner to advanced."
+      },
+      "chatHistory": {
+        "title": "Chat History",
+        "description": "All your conversations are saved and organized. Pick up where you left off or revisit past explanations."
+      }
+    },
+    "getStarted": "Get Started"
+  },
+  "about": {
+    "title": "About TailorAI",
+    "subtitle": "TailorAI is a graduation project built to demonstrate how artificial intelligence can personalize education. Unlike traditional platforms that treat every student the same, TailorAI analyzes your learning patterns, question types, knowledge gaps, and preferences to create a truly individualized learning experience.",
+    "cards": {
+      "phaseAnalysis": {
+        "title": "4-Phase Analysis",
+        "description": "Behavioral analytics, skill progression tracking, knowledge state mastery scoring, and misconception detection work together to build a complete picture of each learner."
+      },
+      "groqPowered": {
+        "title": "Groq-Powered AI",
+        "description": "Leveraging Groq's ultra-fast LLM inference for real-time, context-aware responses. The AI receives your full profile with every message to tailor its teaching approach."
+      },
+      "realtime": {
+        "title": "Real-Time Personalization",
+        "description": "Automatically detects frustration, curiosity, and understanding. Switches between normal mode, Socratic questioning, and support mode based on your emotional state."
+      }
+    },
+    "builtBy": "Built by Hassan Gomaa",
+    "projectNote": "A graduation project demonstrating personalized AI in education.",
+    "cta": "Try It Now"
+  },
+  "admin": {
+    "loading": "Loading Admin Dashboard...",
+    "title": "Admin Dashboard",
+    "subtitle": "System overview and learner monitoring",
+    "loadError": "Unable to load admin data right now. Please refresh and try again.",
+    "cards": {
+      "totalUsers": "Total Users",
+      "totalMessages": "Total Messages",
+      "averageMastery": "Average Mastery"
+    },
+    "topTopics": "Top Topics",
+    "noTopicData": "No topic data yet",
+    "users": "Users",
+    "inspect": "Inspect",
+    "inspecting": "Inspecting...",
+    "noUsersFound": "No users found",
+    "recentInteractions": "Recent Interactions",
+    "noRecentInteractions": "No recent interactions",
+    "roles": {
+      "admin": "Admin",
+      "member": "Member"
+    },
+    "table": {
+      "email": "Email",
+      "created": "Created",
+      "admin": "Admin",
+      "messages": "Messages",
+      "mode": "Mode",
+      "userId": "User ID",
+      "message": "Message",
+      "topics": "Topics",
+      "complexity": "Complexity",
+      "timestamp": "Timestamp"
+    },
+    "userDetail": {
+      "title": "User Detail",
+      "selectPrompt": "Select a user from the table above.",
+      "loading": "Loading user detail...",
+      "unable": "Unable to load user detail.",
+      "userId": "User ID",
+      "email": "Email",
+      "modeHistory": "Mode History",
+      "entries": "entries",
+      "misconceptions": "Misconceptions",
+      "recentInteractions": "Recent Interactions"
+    }
+  }
+}

@@ -2,7 +2,6 @@ from database import Database
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
 import uuid
-from config import Config
 
 class User:
     """User model for handling user data and authentication"""
@@ -27,16 +26,13 @@ class User:
         if User.collection.find_one({"username": username}):
             return {"error": "Username already taken"}, 400
         
-        # Check if this is the admin user
-        is_admin = (email == Config.ADMIN_EMAIL)
-        
         # Create user document
         user_data = {
             "_id": str(uuid.uuid4()),
             "username": username,
             "email": email,
             "password_hash": generate_password_hash(password),
-            "is_admin": is_admin,
+            "is_admin": False,
             "created_at": datetime.utcnow().isoformat(),
             "profile": {
                 "full_name": full_name,

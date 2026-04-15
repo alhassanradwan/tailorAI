@@ -3,6 +3,7 @@
 
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import useAuth from '../hooks/useAuth';
 import api from '../api/axios';
 import Sidebar from '../components/Sidebar';
@@ -17,23 +18,127 @@ const SUGGESTIONS = {
 const STORAGE_PREFIX = 'adaptiveai';
 const profilePicKey = (userKey) => `${STORAGE_PREFIX}:${userKey}:profilePic`;
 
+const TONE_DROPDOWN_VALUES = ['auto', 'friendly', 'professional', 'socratic', 'concise'];
+const MODE_DROPDOWN_VALUES = ['auto', 'direct', 'supportive', 'socratic', 'supportive_socratic'];
+
+const MODE_REASON_KEY_MAP = {
+  'stable understanding detected': 'chat.modeReasons.stableUnderstanding',
+  'user selected tutoring mode': 'chat.modeReasons.userSelectedMode',
+  'identity lookup request': 'chat.identityLookupReason',
+};
+
+const MAX_FILE_EXTRACT_CHARS = 7000;
+const TEXT_FILE_EXTENSIONS = new Set([
+  'txt', 'md', 'markdown', 'json', 'csv', 'tsv', 'xml', 'html', 'css', 'js', 'jsx', 'ts', 'tsx',
+  'py', 'java', 'c', 'cpp', 'h', 'hpp', 'go', 'rs', 'php', 'rb', 'sql', 'yaml', 'yml', 'ini', 'log',
+]);
+
+function normalizeToneChoice(value) {
+  const v = (value || '').toString().trim().toLowerCase();
+  const allowed = new Set(['auto', 'friendly', 'professional', 'socratic', 'concise']);
+  return allowed.has(v) ? v : 'auto';
+}
+
+function normalizeModeChoice(value) {
+  const v = (value || '').toString().trim().toLowerCase();
+  const allowed = new Set(['auto', 'direct', 'supportive', 'socratic', 'supportive_socratic']);
+  return allowed.has(v) ? v : 'auto';
+}
+
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function isLikelyTextFile(file) {
+  const fileName = (file?.name || '').toLowerCase();
+  const extension = fileName.includes('.') ? fileName.split('.').pop() : '';
+  const type = (file?.type || '').toLowerCase();
+
+  if (type.startsWith('text/')) return true;
+  if (type.includes('json') || type.includes('xml') || type.includes('javascript')) return true;
+  if (extension && TEXT_FILE_EXTENSIONS.has(extension)) return true;
+
+  return false;
+}
+
+function widthFromLabel(label, minCh = 5) {
+  const text = (label || '').toString().trim();
+  const widthCh = Math.max(minCh, text.length + 2.2);
+  return `${widthCh}ch`;
+}
+
+function toSkillLabel(value) {
+  const v = (value || '').toString().trim().toLowerCase();
+  if (!v) return '';
+  if (v === 'beginner' || v === 'intermediate' || v === 'advanced') {
+    return v.charAt(0).toUpperCase() + v.slice(1);
+  }
+  return '';
+}
+
 export default function Chat() {
+  const { t, i18n } = useTranslation();
   const { user, profile, setProfile, chatMessages, setChatMessages, saveContext, selectedTone } = useAuth();
 
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [currentSession, setCurrentSession] = useState(null);
+  const [activeMode, setActiveMode] = useState('direct');
+  const [modeReason, setModeReason] = useState('stable understanding detected');
+  const [analysisComplexity, setAnalysisComplexity] = useState('');
+  const [toneChoice, setToneChoice] = useState('auto');
+  const [modeChoice, setModeChoice] = useState('auto');
+  const [isListening, setIsListening] = useState(false);
+  const [attachedFile, setAttachedFile] = useState(null);
 
   // ✅ One state controls sidebar + overlay + chat layout
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const speechRecognitionRef = useRef(null);
 
   const userKey = useMemo(() => (user?.id || user?.email || 'guest'), [user?.id, user?.email]);
 
   const strongest = profile?.domain_analysis?.strongest_domain || 'Machine Learning';
   const suggestions = SUGGESTIONS[strongest] || SUGGESTIONS['Machine Learning'];
+
+  const toneDropdownOptions = useMemo(
+    () => TONE_DROPDOWN_VALUES.map((value) => ({
+      value,
+      label: t(`chat.toneOptions.${value}`),
+    })),
+    [t]
+  );
+
+  const modeDropdownOptions = useMemo(
+    () => MODE_DROPDOWN_VALUES.map((value) => ({
+      value,
+      label: t(`chat.modeOptions.${value}`),
+    })),
+    [t]
+  );
+
+  const localizedModeReason = useMemo(() => {
+    const normalized = (modeReason || '').toString().trim().toLowerCase();
+    const key = MODE_REASON_KEY_MAP[normalized];
+    if (!key) return modeReason;
+    return t(key);
+  }, [modeReason, t]);
+
+  const selectedToneLabel = useMemo(
+    () => toneDropdownOptions.find((opt) => opt.value === toneChoice)?.label || '',
+    [toneDropdownOptions, toneChoice]
+  );
+
+  const selectedModeLabel = useMemo(
+    () => modeDropdownOptions.find((opt) => opt.value === modeChoice)?.label || '',
+    [modeDropdownOptions, modeChoice]
+  );
 
   // Auto scroll
   useEffect(() => {
@@ -89,144 +194,9 @@ export default function Chat() {
     }
   }, [userKey, currentSession, setChatMessages]);
 
-  // Analyze & update profile
-  // eslint-disable-next-line no-unused-vars
-  const analyzeAndUpdateProfile = async (userMessage, _aiResponse) => {
-    try {
-      const { data } = await api.post('/adaptive/analyze', { message: userMessage, profile });
-      if (!data.success || !data.analysis) return;
-
-      const analysis = data.analysis;
-      const recs = analysis.recommendations || {};
-      const meta = analysis.message_analysis || {};
-
-      setProfile((prev) => {
-        const p = { ...prev };
-        const ba = { ...p.behavioral_analytics };
-
-        if (analysis.question_type && ba.question_types[analysis.question_type] !== undefined) {
-          ba.question_types[analysis.question_type]++;
-        }
-        if (analysis.complexity && ba.complexity_distribution[analysis.complexity] !== undefined) {
-          ba.complexity_distribution[analysis.complexity]++;
-        }
-
-        const topics = { ...ba.topics_discussed };
-        (analysis.topics || []).forEach((t) => {
-          if (!topics[t]) {
-            topics[t] = {
-              count: 0,
-              first_seen: new Date().toISOString(),
-              last_seen: new Date().toISOString(),
-              complexity_levels: { beginner: 0, intermediate: 0, advanced: 0 },
-              verified: false,
-            };
-          }
-          topics[t] = { ...topics[t], count: topics[t].count + 1, last_seen: new Date().toISOString() };
-          if (analysis.complexity) {
-            topics[t].complexity_levels = {
-              ...topics[t].complexity_levels,
-              [analysis.complexity]: (topics[t].complexity_levels[analysis.complexity] || 0) + 1,
-            };
-          }
-        });
-        ba.topics_discussed = topics;
-
-        const eng = { ...ba.engagement_metrics };
-        eng.total_messages++;
-        const prevTotal = eng.avg_message_length * (eng.total_messages - 1);
-        eng.avg_message_length = (prevTotal + (meta.word_count || 0)) / eng.total_messages;
-        if (meta.has_code) eng.code_requests++;
-        if (meta.uncertainty_markers) eng.uncertainty_count += meta.uncertainty_markers;
-        ba.engagement_metrics = eng;
-
-        ba.last_analyzed = new Date().toISOString();
-        p.behavioral_analytics = ba;
-
-        const strong = [...(p.strong_topics || [])];
-        const weak = [...(p.weak_topics || [])];
-
-        (recs.add_to_strong_topics || []).forEach((t) => { if (!strong.includes(t)) strong.push(t); });
-        (recs.add_to_weak_topics || []).forEach((t) => { if (!weak.includes(t) && !strong.includes(t)) weak.push(t); });
-        (recs.move_to_strong_topics || []).forEach((t) => {
-          const idx = weak.indexOf(t);
-          if (idx > -1) { weak.splice(idx, 1); if (!strong.includes(t)) strong.push(t); }
-        });
-
-        p.strong_topics = strong;
-        p.weak_topics = weak;
-
-        if (recs.update_skill_level && recs.update_skill_level !== p.skill_level) {
-          const sp = [...(ba.skill_progression || [])];
-          sp.push({ from: p.skill_level || p.python, to: recs.update_skill_level, timestamp: new Date().toISOString() });
-          ba.skill_progression = sp;
-          p.skill_level = recs.update_skill_level;
-        }
-
-        const ks = { ...p.knowledge_state };
-        (analysis.topics || []).forEach((topic) => {
-          const td = topics[topic];
-          if (td && td.count >= 2) {
-            const cl = td.complexity_levels;
-            const total = cl.beginner + cl.intermediate + cl.advanced;
-            const mastery = total > 0
-              ? Math.min(
-                1.0,
-                (cl.beginner * 0.2 + cl.intermediate * 0.5 + cl.advanced * 0.9) / total + Math.min(0.15, td.count * 0.015)
-              )
-              : 0.1;
-
-            ks[topic] = {
-              mastery_level: Math.round(mastery * 100) / 100,
-              interactions: td.count,
-              last_complexity: analysis.complexity,
-              last_seen: new Date().toISOString(),
-            };
-          }
-        });
-        p.knowledge_state = ks;
-
-        if (recs.misconception_detected) {
-          const misc = { ...p.misconceptions };
-          const mt = recs.misconception_topic || (analysis.topics || [])[0] || 'general';
-          if (!misc[mt]) {
-            misc[mt] = {
-              count: 0,
-              detail: recs.misconception_detail || 'Possible misunderstanding detected',
-              first_seen: new Date().toISOString(),
-              corrected: false,
-            };
-          }
-          misc[mt] = { ...misc[mt], count: misc[mt].count + 1, last_seen: new Date().toISOString() };
-          p.misconceptions = misc;
-        }
-
-        p.current_adaptations = {
-          socratic_mode: recs.trigger_socratic_mode || false,
-          emotional_state: recs.emotional_state || 'neutral',
-          suggested_approach: recs.suggested_approach || 'explain_simply',
-          comprehension_check: recs.comprehension_check_topic || null,
-        };
-
-        const msg = userMessage.toLowerCase();
-        const cp = { ...p.conversation_preferences };
-        if (msg.includes('give me an example') || msg.includes('for example') || msg.includes('show me example')) cp.prefers_examples = true;
-        if (msg.includes('show me code') || msg.includes('write code') || msg.includes('code example') || meta.has_code) cp.prefers_code = true;
-        if (msg.includes('analogy') || msg.includes('like what') || msg.includes('eli5')) cp.prefers_analogies = true;
-        if (msg.includes('explain simply') || msg.includes('simple terms')) cp.explanation_style = 'simple';
-        else if (msg.includes('technically') || msg.includes('in depth') || msg.includes('detailed')) cp.explanation_style = 'technical';
-        if (msg.includes('friendly') || msg.includes('casual')) cp.preferred_tone = 'friendly';
-        else if (msg.includes('formal') || msg.includes('professional')) cp.preferred_tone = 'formal';
-        if (msg.includes('short') || msg.includes('brief') || msg.includes('concise')) cp.preferred_length = 'short';
-        else if (msg.includes('long') || msg.includes('elaborate')) cp.preferred_length = 'detailed';
-        p.conversation_preferences = cp;
-
-        return p;
-      });
-    } catch {
-      console.log('Analysis failed (non-critical)');
-    }
-  };
+  // ── analyzeAndUpdateProfile REMOVED ──
+  // All analytics are now computed server-side in KnowledgeStateService.update_from_analysis()
+  // which is called automatically by the /chat/groq endpoint.
 
   // Send message
   const sendMessage = async (text) => {
@@ -272,6 +242,8 @@ export default function Chat() {
         const aiText = `Your name is **${myName}**.`;
         const aiBubble = { role: 'agent', content: aiText, timestamp: Date.now() };
         setChatMessages((prev) => [...prev, aiBubble]);
+        setActiveMode('direct');
+        setModeReason('identity lookup request');
 
         ChatHistory.addMessage(userKey, session.id, {
           text: aiText,
@@ -315,6 +287,15 @@ export default function Chat() {
         skill_level: profile?.python || profile?.estimated_skill_level || 'intermediate',
         learning_tone: profile?.tone || 'Friendly',
         strongest_domain: profile?.strongestDomain || profile?.major || 'general',
+        force_tone: toneChoice === 'auto' ? '' : toneChoice,
+        force_tutoring_mode: modeChoice === 'auto' ? '' : modeChoice,
+        adaptive_preference: modeChoice === 'auto' ? '' : modeChoice,
+        conversation_preferences: {
+          ...(profile?.conversation_preferences || {}),
+          preferred_tone: toneChoice === 'auto' ? '' : (toneChoice === 'professional' ? 'formal' : toneChoice),
+          preferred_length: toneChoice === 'concise' ? 'short' : ((profile?.conversation_preferences || {}).preferred_length || ''),
+          adaptive_preference: modeChoice === 'auto' ? '' : modeChoice,
+        },
       };
 
       const { data } = await api.post('/chat/groq', {
@@ -327,19 +308,50 @@ export default function Chat() {
       setIsTyping(false);
 
       if (data.success && data.response) {
-        const aiMsg = { role: 'agent', content: data.response, timestamp: Date.now() };
+        const aiMsg = {
+          role: 'agent',
+          content: data.response,
+          blocks: Array.isArray(data.content_blocks) ? data.content_blocks : [],
+          messageType: data.message_type || 'legacy_text',
+          timestamp: Date.now(),
+        };
         setChatMessages((prev) => [...prev, aiMsg]);
+
+        if (data.mode) setActiveMode(data.mode);
+        if (data.reason) setModeReason(data.reason);
+        if (data.analysis?.complexity) {
+          const nextSkill = String(data.analysis.complexity);
+          setAnalysisComplexity(nextSkill);
+          setProfile((prev) => prev ? {
+            ...prev,
+            estimated_skill_level: nextSkill,
+            skill_level: nextSkill,
+          } : prev);
+        }
 
         ChatHistory.addMessage(userKey, session.id, { text: data.response, sender: 'agent', timestamp: new Date().toISOString() });
 
-        await analyzeAndUpdateProfile(userMsg, data.response);
+        // Analytics are now handled server-side automatically
         saveContext();
       } else {
         throw new Error(data.error || 'API error');
       }
     } catch (err) {
       setIsTyping(false);
-      const errMsg = { role: 'agent', content: 'Sorry, I encountered an error. Please try again.', timestamp: Date.now() };
+      const status = err?.response?.status;
+      const backendError = err?.response?.data?.error;
+      const backendMsg = err?.response?.data?.msg;
+      let friendlyError = 'Sorry, I encountered an error. Please try again.';
+
+      if (status === 401) {
+        friendlyError = 'Your session expired. Please log in again, then resend your message.';
+      } else if (typeof backendError === 'string' && backendError.trim()) {
+        friendlyError = backendError;
+      } else if (typeof backendMsg === 'string' && backendMsg.trim()) {
+        friendlyError = backendMsg;
+      }
+
+      const errMsg = { role: 'agent', content: friendlyError, timestamp: Date.now() };
       setChatMessages((prev) => [...prev, errMsg]);
       console.error('Chat error:', err);
     }
@@ -352,15 +364,257 @@ export default function Chat() {
     }
   };
 
-  const profileScore = profile?.domain_analysis
-    ? `${(profile.domain_analysis.overall_accuracy || 0).toFixed(0)}%`
-    : (profile?.estimated_skill_level || 'Beginner');
+  const profileScore =
+    toSkillLabel(analysisComplexity)
+    || toSkillLabel(profile?.estimated_skill_level)
+    || toSkillLabel(profile?.skill_level)
+    || toSkillLabel(profile?.python)
+    || (profile?.domain_analysis
+      ? `${(profile.domain_analysis.overall_accuracy || 0).toFixed(0)}%`
+      : 'Beginner');
 
-  const profileStrongest = profile?.domain_analysis
-    ? profile.domain_analysis.strongest_domain?.split(' ')[0]
-    : 'General';
+  useEffect(() => {
+    const fallbackSkill =
+      profile?.estimated_skill_level
+      || profile?.skill_level
+      || profile?.python
+      || '';
+    if (!analysisComplexity && fallbackSkill) {
+      setAnalysisComplexity(String(fallbackSkill));
+    }
+  }, [analysisComplexity, profile?.estimated_skill_level, profile?.skill_level, profile?.python]);
 
-  const profileTone = profile?.tone || profile?.preferences?.learning_style || 'Friendly';
+  useEffect(() => {
+    const uid = user?.id || user?.user_id;
+    if (!uid) return;
+    let cancelled = false;
+
+    const syncFromLatestHistory = async () => {
+      try {
+        const { data } = await api.get(`/chat/history/${uid}`);
+        const latest = Array.isArray(data?.history) ? data.history[0] : null;
+        const historyComplexity = latest?.analysis?.complexity;
+        if (!cancelled && historyComplexity && !analysisComplexity) {
+          setAnalysisComplexity(String(historyComplexity));
+          setProfile((prev) => prev ? {
+            ...prev,
+            estimated_skill_level: String(historyComplexity),
+            skill_level: String(historyComplexity),
+          } : prev);
+        }
+      } catch {
+        // Non-blocking: fallback to profile-based badge when history is unavailable.
+      }
+    };
+
+    syncFromLatestHistory();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, user?.user_id, analysisComplexity, setProfile]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const syncFromAnalytics = async () => {
+      try {
+        const { data } = await api.get('/analytics/summary');
+        const analyticsLevel = data?.summary?.skill_level;
+        if (!cancelled && analyticsLevel) {
+          setAnalysisComplexity(String(analyticsLevel));
+          setProfile((prev) => prev ? {
+            ...prev,
+            estimated_skill_level: String(analyticsLevel),
+            skill_level: String(analyticsLevel),
+          } : prev);
+        }
+      } catch {
+        // Non-blocking fallback: badge can still sync from latest chat response/history.
+      }
+    };
+
+    syncFromAnalytics();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, user?.user_id, setProfile]);
+
+  useEffect(() => {
+    const prefToneRaw =
+      profile?.conversation_preferences?.preferred_tone
+      || profile?.tone
+      || profile?.preferences?.learning_style
+      || 'auto';
+    const prefTone = prefToneRaw.toString().trim().toLowerCase();
+    const mappedTone = prefTone === 'formal' ? 'professional' : prefTone;
+    setToneChoice(normalizeToneChoice(mappedTone));
+
+    const prefModeRaw =
+      profile?.conversation_preferences?.adaptive_preference
+      || profile?.adaptive_preference
+      || 'auto';
+    setModeChoice(normalizeModeChoice(prefModeRaw));
+  }, [
+    profile?.conversation_preferences?.preferred_tone,
+    profile?.conversation_preferences?.adaptive_preference,
+    profile?.adaptive_preference,
+    profile?.tone,
+    profile?.preferences?.learning_style,
+  ]);
+
+  const handleToneChange = (event) => {
+    const next = normalizeToneChoice(event.target.value);
+    setToneChoice(next);
+    setProfile((prev) => {
+      if (!prev) return prev;
+      const mappedTone = next === 'professional' ? 'formal' : (next === 'auto' ? '' : next);
+      return {
+        ...prev,
+        conversation_preferences: {
+          ...(prev.conversation_preferences || {}),
+          preferred_tone: mappedTone,
+          preferred_length: next === 'concise' ? 'short' : ((prev.conversation_preferences || {}).preferred_length || ''),
+        },
+      };
+    });
+  };
+
+  const handleModeChange = (event) => {
+    const next = normalizeModeChoice(event.target.value);
+    setModeChoice(next);
+    setProfile((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        adaptive_preference: next === 'auto' ? '' : next,
+        conversation_preferences: {
+          ...(prev.conversation_preferences || {}),
+          adaptive_preference: next === 'auto' ? '' : next,
+        },
+      };
+    });
+
+    if (next !== 'auto') {
+      setActiveMode(next);
+      setModeReason('user selected tutoring mode');
+    }
+  };
+
+  useEffect(() => {
+    console.debug('[Chat badge mode]', { activeMode, modeReason });
+  }, [activeMode, modeReason]);
+
+  useEffect(() => {
+    return () => {
+      if (speechRecognitionRef.current) {
+        speechRecognitionRef.current.stop();
+      }
+    };
+  }, []);
+
+  const pushLocalAgentMessage = useCallback((content) => {
+    setChatMessages((prev) => [...prev, { role: 'agent', content, timestamp: Date.now() }]);
+  }, [setChatMessages]);
+
+  const handlePickFile = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileSelected = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    if (!isLikelyTextFile(file)) {
+      setAttachedFile({
+        name: file.name,
+        size: file.size,
+        status: 'ui-only',
+        extractedChars: 0,
+        truncated: false,
+      });
+      pushLocalAgentMessage(t('chat.fileUnsupported', { fileName: file.name }));
+      return;
+    }
+
+    try {
+      const rawText = await file.text();
+      const cleanText = rawText.trim();
+      const extracted = cleanText.slice(0, MAX_FILE_EXTRACT_CHARS);
+      const truncated = cleanText.length > MAX_FILE_EXTRACT_CHARS;
+
+      setAttachedFile({
+        name: file.name,
+        size: file.size,
+        status: 'ready',
+        extractedChars: extracted.length,
+        truncated,
+      });
+
+      const prompt = t('chat.filePrompt', {
+        fileName: file.name,
+        fileContent: extracted || t('chat.fileEmptyFallback'),
+      });
+
+      setInput(prompt);
+      inputRef.current?.focus();
+      pushLocalAgentMessage(t('chat.fileReady', { fileName: file.name }));
+    } catch {
+      setAttachedFile({
+        name: file.name,
+        size: file.size,
+        status: 'error',
+        extractedChars: 0,
+        truncated: false,
+      });
+      pushLocalAgentMessage(t('chat.fileReadError', { fileName: file.name }));
+    }
+  };
+
+  const handleVoiceInput = () => {
+    const SpeechRecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognitionClass) {
+      pushLocalAgentMessage(t('chat.voiceNotSupported'));
+      return;
+    }
+
+    if (!speechRecognitionRef.current) {
+      const recognition = new SpeechRecognitionClass();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        setIsListening(true);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognition.onerror = () => {
+        setIsListening(false);
+        pushLocalAgentMessage(t('chat.voiceError'));
+      };
+
+      recognition.onresult = (evt) => {
+        const transcript = evt?.results?.[0]?.[0]?.transcript?.trim();
+        if (!transcript) return;
+        sendMessage(transcript);
+      };
+
+      speechRecognitionRef.current = recognition;
+    }
+
+    if (isListening) {
+      speechRecognitionRef.current.stop();
+      return;
+    }
+
+    speechRecognitionRef.current.lang = i18n.language?.startsWith('ar') ? 'ar-SA' : 'en-US';
+    speechRecognitionRef.current.start();
+  };
 
   return (
     <div className={`chat-view-with-sidebar ${sidebarOpen ? '' : 'sidebar-collapsed'}`}>
@@ -379,7 +633,7 @@ export default function Chat() {
             <button
               className="sidebar-open-btn"
               onClick={() => setSidebarOpen(true)}
-              aria-label="Open sidebar"
+              aria-label={t('chat.openSidebar')}
               type="button"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -391,11 +645,35 @@ export default function Chat() {
           )}
 
           <div className="chat-header-info">
-            <h3 id="studentNameDisplay">{user?.name || profile?.name || 'Student'}</h3>
+            <h3 id="studentNameDisplay">{user?.name || profile?.name || t('common.student')}</h3>
             <div className="chat-header-stats">
               <span className="stat-chip">{profileScore}</span>
-              <span className="stat-chip">{profileStrongest}</span>
-              <span className="stat-chip">{profileTone}</span>
+              <label className="header-inline-control" title={t('chat.tooltips.chooseTone')}>
+                <span className="header-inline-label">{t('chat.labels.tone')}:</span>
+                <select
+                  value={toneChoice}
+                  onChange={handleToneChange}
+                  aria-label={t('chat.aria.toneSelector')}
+                  style={{ width: widthFromLabel(selectedToneLabel, 5) }}
+                >
+                  {toneDropdownOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="header-inline-control" title={localizedModeReason || ''}>
+                <span className="header-inline-label">{t('chat.labels.mode')}:</span>
+                <select
+                  value={modeChoice}
+                  onChange={handleModeChange}
+                  aria-label={t('chat.aria.modeSelector')}
+                  style={{ width: widthFromLabel(selectedModeLabel, 6) }}
+                >
+                  {modeDropdownOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </label>
             </div>
           </div>
         </div>
@@ -415,8 +693,8 @@ export default function Chat() {
                   </defs>
                 </svg>
               </div>
-              <h3>Welcome, {user?.name || 'Student'}!</h3>
-              <p>I'm your Personalized AI tutor. Ask me anything about Data Science, Machine Learning, or Deep Learning.</p>
+              <h3>{t('chat.welcomeTitle', { name: user?.name || t('common.student') })}</h3>
+              <p>{t('chat.welcomeSubtitle')}</p>
             </div>
           )}
 
@@ -431,7 +709,7 @@ export default function Chat() {
               </div>
               <div className="message-enhanced-wrapper">
                 <div className="message-enhanced-content loading-message">
-                  <img src="/favicon.svg" className="loading-icon" alt="Loading..." />
+                  <img src="/favicon.svg" className="loading-icon" alt={t('chat.typingAlt')} />
                 </div>
               </div>
             </div>
@@ -451,26 +729,78 @@ export default function Chat() {
         )}
 
         <form className="chat-input-container" onSubmit={(e) => { e.preventDefault(); sendMessage(input); }}>
-          <textarea
-            ref={inputRef}
-            className="chat-input"
-            id="chatInput"
-            value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
-              e.target.style.height = 'auto';
-              e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
-            }}
-            onKeyDown={handleKeyDown}
-            placeholder="Just ask..."
-            rows={1}
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="chat-hidden-file-input"
+            onChange={handleFileSelected}
+            accept=".txt,.md,.markdown,.json,.csv,.tsv,.xml,.html,.css,.js,.jsx,.ts,.tsx,.py,.java,.c,.cpp,.go,.rs,.php,.rb,.sql,.yaml,.yml,.ini,.log,.pdf,.doc,.docx"
           />
-          <button type="submit" className="chat-send-btn" disabled={!input.trim() || isTyping}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="22" y1="2" x2="11" y2="13" />
-              <polygon points="22 2 15 22 11 13 2 9 22 2" />
-            </svg>
-          </button>
+
+          <div className="chat-composer-row chat-composer-pill">
+            <button type="button" className="chat-icon-btn chat-plus-btn" onClick={handlePickFile} aria-label={t('chat.attachFile')}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+
+            <textarea
+              ref={inputRef}
+              className="chat-input"
+              id="chatInput"
+              value={input}
+              onChange={(e) => {
+                setInput(e.target.value);
+                e.target.style.height = 'auto';
+                e.target.style.height = Math.min(e.target.scrollHeight, 100) + 'px';
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder={t('chat.askAnything')}
+              rows={1}
+            />
+
+            <button
+              type="button"
+              className={`chat-icon-btn chat-mic-btn ${isListening ? 'is-listening' : ''}`}
+              onClick={handleVoiceInput}
+              aria-label={isListening ? t('chat.listening') : t('chat.recordVoice')}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
+                <path d="M19 10v2a7 7 0 01-14 0v-2" />
+                <line x1="12" y1="19" x2="12" y2="23" />
+                <line x1="8" y1="23" x2="16" y2="23" />
+              </svg>
+            </button>
+
+            <button
+              type="submit"
+              className="chat-send-btn chat-send-action-btn"
+              aria-label={t('chat.send')}
+              disabled={isTyping}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="22" y1="2" x2="11" y2="13" />
+                <polygon points="22 2 15 22 11 13 2 9 22 2" />
+              </svg>
+            </button>
+          </div>
+
+          {attachedFile && (
+            <div className="chat-file-pill" title={attachedFile.name}>
+              <strong>{attachedFile.name}</strong>
+              <span>{formatFileSize(attachedFile.size)}</span>
+              {attachedFile.status === 'ready' && (
+                <span>
+                  {attachedFile.extractedChars} {t('chat.charsExtracted')}
+                  {attachedFile.truncated ? ` (${t('chat.truncated')})` : ''}
+                </span>
+              )}
+              {attachedFile.status === 'ui-only' && <span>{t('chat.uiOnly')}</span>}
+              {attachedFile.status === 'error' && <span>{t('chat.readFailed')}</span>}
+            </div>
+          )}
         </form>
       </div>
     </div>
@@ -505,7 +835,9 @@ function MessageBubble({ message, userKey }) {
       )}
 
       <div className="message-enhanced-wrapper">
-        <div className="message-enhanced-content">{message.content}</div>
+        <div className="message-enhanced-content">
+          {isUser ? message.content : <DynamicMessageContent message={message} />}
+        </div>
         <div className="message-enhanced-timestamp">{formatTimestamp(message.timestamp || new Date().toISOString())}</div>
       </div>
 
@@ -523,4 +855,154 @@ function MessageBubble({ message, userKey }) {
       )}
     </div>
   );
+}
+
+function DynamicMessageContent({ message }) {
+  const blocks = Array.isArray(message?.blocks) ? message.blocks : [];
+  if (!blocks.length) {
+    return message?.content || '';
+  }
+
+  return (
+    <div className="dynamic-message-blocks">
+      {blocks.map((block, idx) => (
+        <div key={`${block?.type || 'text'}-${idx}`} className="dynamic-block-wrap">
+          {idx > 0 ? <div className="dynamic-block-separator" aria-hidden="true" /> : null}
+          <DynamicBlock block={block} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DynamicBlock({ block }) {
+  const type = (block?.type || 'text').toLowerCase();
+  const title = cleanMarkdownLine(block?.title || '');
+  const text = block?.text || '';
+  const items = Array.isArray(block?.items) ? block.items : [];
+  const rows = Array.isArray(block?.rows) ? block.rows : [];
+
+  if (type === 'code') {
+    return (
+      <div className="dynamic-block dynamic-block-code">
+        {title ? <strong>{title}</strong> : null}
+        <pre><code>{text}</code></pre>
+      </div>
+    );
+  }
+
+  if (type === 'steps' || type === 'quiz') {
+    const lines = items.length
+      ? items
+      : text.split('\n').map((line) => line.trim()).filter(Boolean);
+    return (
+      <div className="dynamic-block dynamic-block-list">
+        {title ? <strong>{title}</strong> : null}
+        <ul>
+          {lines.map((line, idx) => (
+            <li key={`${type}-line-${idx}`}><RichTextLine text={cleanMarkdownLine(line.replace(/^[-*]\s*/, ''))} /></li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+
+  const parsedTable = rows.length ? { headers: Object.keys(rows[0] || {}), dataRows: rows } : parseMarkdownTable(text);
+  if (type === 'comparison_table' && parsedTable.dataRows.length) {
+    const headers = parsedTable.headers;
+    return (
+      <div className="dynamic-block dynamic-block-table">
+        {title ? <strong>{title}</strong> : null}
+        <table>
+          <thead>
+            <tr>
+              {headers.map((h) => <th key={h}><RichTextLine text={cleanMarkdownLine(h)} /></th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {parsedTable.dataRows.map((row, ridx) => (
+              <tr key={`row-${ridx}`}>
+                {headers.map((h) => (
+                  <td key={`${ridx}-${h}`}>
+                    <RichTextLine text={cleanMarkdownLine(String(row[h] || ''))} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  return (
+    <div className="dynamic-block dynamic-block-text">
+      {title ? <strong>{title}</strong> : null}
+      <div className="dynamic-text-lines">
+        {text
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .map((line, idx) => (
+            <div key={`txt-${idx}`}>
+              <RichTextLine text={cleanMarkdownLine(line)} />
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+}
+
+function cleanMarkdownLine(raw) {
+  return (raw || '')
+    .replace(/^#{1,6}\s*/, '')
+    .replace(/`/g, '')
+    .trim();
+}
+
+function RichTextLine({ text }) {
+  const parts = String(text || '').split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
+  if (!parts.length) return null;
+  return (
+    <>
+      {parts.map((part, idx) => {
+        const isBold = /^\*\*[^*]+\*\*$/.test(part);
+        if (isBold) {
+          return <strong key={`b-${idx}`}>{part.slice(2, -2)}</strong>;
+        }
+        return <span key={`t-${idx}`}>{part}</span>;
+      })}
+    </>
+  );
+}
+
+function parseMarkdownTable(text) {
+  const lines = String(text || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.includes('|'));
+
+  if (lines.length < 2) return { headers: [], dataRows: [] };
+
+  const rawRows = lines
+    .map((line) => line.replace(/^\||\|$/g, '').split('|').map((cell) => cell.trim()))
+    .filter((cells) => cells.length >= 2);
+
+  if (rawRows.length < 2) return { headers: [], dataRows: [] };
+
+  const isSeparator = (cells) => cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+  const header = rawRows[0];
+  const bodyRows = rawRows.slice(1).filter((cells) => !isSeparator(cells));
+  if (!bodyRows.length) return { headers: [], dataRows: [] };
+
+  const headers = header.map((h) => cleanMarkdownLine(h));
+  const dataRows = bodyRows.map((cells) => {
+    const row = {};
+    headers.forEach((h, idx) => {
+      row[h] = cleanMarkdownLine(cells[idx] || '');
+    });
+    return row;
+  });
+
+  return { headers, dataRows };
 }

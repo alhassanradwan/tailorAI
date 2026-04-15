@@ -2,7 +2,6 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token, create_refresh_token, jwt_required, get_jwt_identity
 from models.user import User
 from services.session import SessionService
-from config import Config
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -24,7 +23,7 @@ def signup():
     if status == 201:
         # Generate tokens for new user
         user_id = result['user']['_id']
-        is_admin = (email == Config.ADMIN_EMAIL)
+        is_admin = bool(result['user'].get('is_admin', False))
         
         access_token = create_access_token(
             identity=user_id,
@@ -58,7 +57,7 @@ def login():
     if status == 200:
         # Generate tokens
         user_id = result['user']['_id']
-        is_admin = (email == Config.ADMIN_EMAIL)
+        is_admin = bool(result['user'].get('is_admin', False))
         
         access_token = create_access_token(
             identity=user_id,
@@ -83,11 +82,11 @@ def refresh():
     user_id = get_jwt_identity()
     
     # Generate new access token
-    user = User.get_user_by_id(user_id)
-    if not user:
+    result, status = User.get_user_by_id(user_id)
+    if status != 200 or not result.get('user'):
         return jsonify({"error": "User not found"}), 404
-    
-    is_admin = (user.get('email') == Config.ADMIN_EMAIL)
+
+    is_admin = bool(result['user'].get('is_admin', False))
     
     access_token = create_access_token(
         identity=user_id,
@@ -107,11 +106,8 @@ def refresh():
 def logout():
     """Handle user logout"""
     user_id = get_jwt_identity()
-    
-    # Get token from header
-    token = request.headers.get('Authorization', '').replace('Bearer ', '')
-    
+
     # Invalidate session
-    SessionService.invalidate_session(token)
+    SessionService.invalidate_session(user_id)
     
     return jsonify({"message": "Logged out successfully"}), 200
