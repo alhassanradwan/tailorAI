@@ -22,6 +22,7 @@ from services.adaptive_mode_service import AdaptiveModeService
 from services.langchain_analyzer import LangChainAnalyzer
 from services.langchain_generator import LangChainGenerator
 from services.langchain_prompts import select_output_plan
+from services.langchain_schemas import build_text_only_dynamic_envelope
 
 logger = logging.getLogger(__name__)
 
@@ -217,6 +218,91 @@ def _format_structured_fallback(text: str, structured_intent: str | None) -> tup
         return f"Explanation\n{content}\n\nOptions\n- Option 1: Fast to implement\n- Option 2: Balanced tradeoff\n- Option 3: Highest potential performance\n\nRecommendation\nChoose based on your latency, accuracy, and maintenance constraints.", True, 'multi_idea_structure'
 
     return content, False, None
+
+
+def _dynamic_block_type_from_title(title: str | None, content: str) -> str:
+    title_norm = (title or '').strip().lower()
+    content_norm = (content or '').lower()
+    if title_norm in {'comparison', 'comparison table'}:
+        return 'comparison_table'
+    if title_norm in {'steps', 'key points', 'options'}:
+        return 'steps'
+    if title_norm in {'quiz', 'practice', 'questions'}:
+        return 'quiz'
+    if title_norm in {'hint', 'hints'}:
+        return 'hint'
+    if '```' in content_norm:
+        return 'code'
+    if '?' in content_norm and len(content_norm) < 280:
+        return 'follow_up'
+    if title_norm in {'explanation', 'summary', 'recommendation'}:
+        return 'explanation'
+    return 'text'
+
+
+def _build_dynamic_response_payload(
+    response_text: str,
+    intent: str,
+    confidence: float,
+    fallback_used: bool,
+    fallback_reason: str | None,
+) -> dict:
+    heading_pattern = re.compile(r'^(?:#{1,6}\s*)?([A-Za-z][A-Za-z ]{2,40})\s*:?$')
+    lines = (response_text or '').splitlines()
+    blocks = []
+    current_title = None
+    current_lines = []
+
+    for line in lines:
+        stripped = line.strip()
+        heading_match = heading_pattern.match(stripped) if stripped else None
+        if heading_match:
+            if current_lines:
+                content = '\n'.join(current_lines).strip()
+                if content:
+                    blocks.append({
+                        'type': _dynamic_block_type_from_title(current_title, content),
+                        'title': current_title,
+                        'text': content,
+                        'language': None,
+                        'rows': [],
+                        'items': [],
+                    })
+                current_lines = []
+            current_title = heading_match.group(1).strip()
+            continue
+        current_lines.append(line)
+
+    if current_lines:
+        content = '\n'.join(current_lines).strip()
+        if content:
+            blocks.append({
+                'type': _dynamic_block_type_from_title(current_title, content),
+                'title': current_title,
+                'text': content,
+                'language': None,
+                'rows': [],
+                'items': [],
+            })
+
+    if not blocks:
+        return build_text_only_dynamic_envelope(
+            response_text=response_text,
+            intent=intent,
+            confidence=confidence,
+            fallback_used=fallback_used,
+            fallback_reason=fallback_reason,
+        ).model_dump()
+
+    payload = build_text_only_dynamic_envelope(
+        response_text='',
+        intent=intent,
+        confidence=confidence,
+        fallback_used=fallback_used,
+        fallback_reason=fallback_reason,
+    ).model_dump()
+    payload['content_blocks'] = blocks
+    return payload
 
 
 def _normalize_forced_mode(value: str) -> str:
@@ -935,11 +1021,19 @@ Only use what is directly relevant to the student's question.
                             'langchain_used': True,
                             'structured_required': bool(generation_plan.get('structured_response_required', False)),
                             'structured_intent': generation_plan.get('structured_intent'),
+                            'intent': generation_plan.get('intent'),
                             'sections': lc_result.get('sections', []),
                             'formatter_applied': bool(lc_result.get('formatter_applied', False)),
                             'formatter_reason': lc_result.get('formatter_reason'),
                             'fallback_reason': None,
                         },
+                        'dynamic_response': lc_result.get('dynamic_response') or _build_dynamic_response_payload(
+                            response_text=lc_result['response'],
+                            intent=(generation_plan.get('intent') or generation_plan.get('structured_intent') or 'general_fallback'),
+                            confidence=float(generation_plan.get('confidence', 0.0) or 0.0),
+                            fallback_used=False,
+                            fallback_reason=None,
+                        ),
                     }
 
                 generation_fallback_reason = lc_result.get('error', 'unknown')
@@ -967,18 +1061,26 @@ Only use what is directly relevant to the student's question.
             logger.error("Groq API call failed: %s", e)
             return {'success': False, 'error': str(e)}
 
-        # Always enforce baseline organization on native responses.
+        # In dynamic mode, avoid rigid rewriting. Keep only minimal legacy formatting when disabled.
         formatter_applied = False
         formatter_reason = None
         structured_intent = generation_plan.get('structured_intent')
-        if generation_plan.get('structured_response_required', False):
+        if not Config.DYNAMIC_CHAT_SCHEMA_ENABLED and generation_plan.get('structured_response_required', False):
             response_text, formatter_applied, formatter_reason = _format_structured_fallback(
                 response_text,
                 structured_intent,
             )
 
-        if not formatter_applied:
+        if not Config.DYNAMIC_CHAT_SCHEMA_ENABLED and not formatter_applied:
             response_text, formatter_applied, formatter_reason = _format_general_response(response_text)
+
+        dynamic_response = _build_dynamic_response_payload(
+            response_text=response_text,
+            intent=(generation_plan.get('intent') or structured_intent or 'general_fallback'),
+            confidence=float(generation_plan.get('confidence', 0.0) or 0.0),
+            fallback_used=bool(generation_fallback_reason),
+            fallback_reason=generation_fallback_reason,
+        )
 
         elapsed = round((time.time() - t0) * 1000)
         print('generation_path:', 'fallback')
@@ -1000,9 +1102,11 @@ Only use what is directly relevant to the student's question.
                 'langchain_used': False,
                 'structured_required': bool(generation_plan.get('structured_response_required', False)),
                 'structured_intent': generation_plan.get('structured_intent'),
+                'intent': generation_plan.get('intent'),
                 'sections': generation_plan.get('sections', []),
                 'formatter_applied': formatter_applied,
                 'formatter_reason': formatter_reason,
                 'fallback_reason': generation_fallback_reason,
             },
+            'dynamic_response': dynamic_response,
         }

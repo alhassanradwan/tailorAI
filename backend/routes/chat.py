@@ -6,6 +6,7 @@ Handles all chat-related API endpoints
 import logging
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from config import Config
 from models.user import User
 from services.ai_agents import AIService
 from services.agent_router import DeepAgentRouter
@@ -223,6 +224,27 @@ def chat_groq():
             analysis.get('recommendations', {}).get('tutoring_mode'),
         )
 
+        dynamic_response = result.get('dynamic_response') or {
+            'response_schema_version': 'v1',
+            'message_type': 'dynamic_blocks',
+            'content_blocks': [
+                {
+                    'type': 'text',
+                    'title': None,
+                    'text': result.get('response', ''),
+                    'language': None,
+                    'rows': [],
+                    'items': [],
+                }
+            ] if result.get('response') else [],
+            'metadata': {
+                'intent': (result.get('generation', {}) or {}).get('intent') or 'general_fallback',
+                'confidence': 0.0,
+                'fallback_used': False,
+                'fallback_reason': None,
+            },
+        }
+
         return jsonify({
             "success": True,
             "response": result['response'],
@@ -240,6 +262,11 @@ def chat_groq():
                 "mode_reason": reason,
             },
             "generation": result.get('generation', {}),
+            "response_schema_version": dynamic_response.get('response_schema_version', 'v1'),
+            "message_type": dynamic_response.get('message_type', 'dynamic_blocks'),
+            "content_blocks": dynamic_response.get('content_blocks', []),
+            "response_metadata": dynamic_response.get('metadata', {}),
+            "dynamic_schema_enabled": bool(Config.DYNAMIC_CHAT_SCHEMA_ENABLED),
         }), 200
 
     except Exception as e:

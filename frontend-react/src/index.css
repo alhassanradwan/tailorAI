@@ -1733,6 +1733,77 @@ input[type="range"]::-moz-range-thumb {
   border: 1px solid rgba(156, 163, 175, 0.3);
 }
 
+.dynamic-message-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.dynamic-block-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.dynamic-block-separator {
+  height: 1px;
+  width: 100%;
+  background: linear-gradient(
+    90deg,
+    rgba(148, 163, 184, 0),
+    rgba(148, 163, 184, 0.5),
+    rgba(148, 163, 184, 0)
+  );
+}
+
+.dynamic-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.dynamic-block strong {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.dynamic-block-list ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.dynamic-block-code pre {
+  margin: 0;
+  padding: 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(15, 23, 42, 0.35);
+  overflow-x: auto;
+}
+
+.dynamic-block-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.dynamic-block-table th,
+.dynamic-block-table td {
+  border: none;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.38);
+  padding: 0.45rem 0.55rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.dynamic-block-table th {
+  font-weight: 700;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.65);
+}
+
+.dynamic-block-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
 .message-enhanced-timestamp {
   font-size: 0.75rem;
   color: var(--text-muted);

@@ -298,7 +298,13 @@ export default function Chat() {
       setIsTyping(false);
 
       if (data.success && data.response) {
-        const aiMsg = { role: 'agent', content: data.response, timestamp: Date.now() };
+        const aiMsg = {
+          role: 'agent',
+          content: data.response,
+          blocks: Array.isArray(data.content_blocks) ? data.content_blocks : [],
+          messageType: data.message_type || 'legacy_text',
+          timestamp: Date.now(),
+        };
         setChatMessages((prev) => [...prev, aiMsg]);
 
         if (data.mode) setActiveMode(data.mode);
@@ -739,7 +745,9 @@ function MessageBubble({ message, userKey }) {
       )}
 
       <div className="message-enhanced-wrapper">
-        <div className="message-enhanced-content">{message.content}</div>
+        <div className="message-enhanced-content">
+          {isUser ? message.content : <DynamicMessageContent message={message} />}
+        </div>
         <div className="message-enhanced-timestamp">{formatTimestamp(message.timestamp || new Date().toISOString())}</div>
       </div>
 
@@ -757,4 +765,154 @@ function MessageBubble({ message, userKey }) {
       )}
     </div>
   );
+}
+
+function DynamicMessageContent({ message }) {
+  const blocks = Array.isArray(message?.blocks) ? message.blocks : [];
+  if (!blocks.length) {
+    return message?.content || '';
+  }
+
+  return (
+    <div className="dynamic-message-blocks">
+      {blocks.map((block, idx) => (
+        <div key={`${block?.type || 'text'}-${idx}`} className="dynamic-block-wrap">
+          {idx > 0 ? <div className="dynamic-block-separator" aria-hidden="true" /> : null}
+          <DynamicBlock block={block} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DynamicBlock({ block }) {
+  const type = (block?.type || 'text').toLowerCase();
+  const title = cleanMarkdownLine(block?.title || '');
+  const text = block?.text || '';
+  const items = Array.isArray(block?.items) ? block.items : [];
+  const rows = Array.isArray(block?.rows) ? block.rows : [];
+
+  if (type === 'code') {
+    return (
+      <div className="dynamic-block dynamic-block-code">
+        {title ? <strong>{title}</strong> : null}
+        <pre><code>{text}</code></pre>
+      </div>
+    );
+  }
+
+  if (type === 'steps' || type === 'quiz') {
+    const lines = items.length
+      ? items
+      : text.split('\n').map((line) => line.trim()).filter(Boolean);
+    return (
+      <div className="dynamic-block dynamic-block-list">
+        {title ? <strong>{title}</strong> : null}
+        <ul>
+          {lines.map((line, idx) => (
+            <li key={`${type}-line-${idx}`}><RichTextLine text={cleanMarkdownLine(line.replace(/^[-*]\s*/, ''))} /></li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+
+  const parsedTable = rows.length ? { headers: Object.keys(rows[0] || {}), dataRows: rows } : parseMarkdownTable(text);
+  if (type === 'comparison_table' && parsedTable.dataRows.length) {
+    const headers = parsedTable.headers;
+    return (
+      <div className="dynamic-block dynamic-block-table">
+        {title ? <strong>{title}</strong> : null}
+        <table>
+          <thead>
+            <tr>
+              {headers.map((h) => <th key={h}><RichTextLine text={cleanMarkdownLine(h)} /></th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {parsedTable.dataRows.map((row, ridx) => (
+              <tr key={`row-${ridx}`}>
+                {headers.map((h) => (
+                  <td key={`${ridx}-${h}`}>
+                    <RichTextLine text={cleanMarkdownLine(String(row[h] || ''))} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  return (
+    <div className="dynamic-block dynamic-block-text">
+      {title ? <strong>{title}</strong> : null}
+      <div className="dynamic-text-lines">
+        {text
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .map((line, idx) => (
+            <div key={`txt-${idx}`}>
+              <RichTextLine text={cleanMarkdownLine(line)} />
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+}
+
+function cleanMarkdownLine(raw) {
+  return (raw || '')
+    .replace(/^#{1,6}\s*/, '')
+    .replace(/`/g, '')
+    .trim();
+}
+
+function RichTextLine({ text }) {
+  const parts = String(text || '').split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
+  if (!parts.length) return null;
+  return (
+    <>
+      {parts.map((part, idx) => {
+        const isBold = /^\*\*[^*]+\*\*$/.test(part);
+        if (isBold) {
+          return <strong key={`b-${idx}`}>{part.slice(2, -2)}</strong>;
+        }
+        return <span key={`t-${idx}`}>{part}</span>;
+      })}
+    </>
+  );
+}
+
+function parseMarkdownTable(text) {
+  const lines = String(text || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.includes('|'));
+
+  if (lines.length < 2) return { headers: [], dataRows: [] };
+
+  const rawRows = lines
+    .map((line) => line.replace(/^\||\|$/g, '').split('|').map((cell) => cell.trim()))
+    .filter((cells) => cells.length >= 2);
+
+  if (rawRows.length < 2) return { headers: [], dataRows: [] };
+
+  const isSeparator = (cells) => cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+  const header = rawRows[0];
+  const bodyRows = rawRows.slice(1).filter((cells) => !isSeparator(cells));
+  if (!bodyRows.length) return { headers: [], dataRows: [] };
+
+  const headers = header.map((h) => cleanMarkdownLine(h));
+  const dataRows = bodyRows.map((cells) => {
+    const row = {};
+    headers.forEach((h, idx) => {
+      row[h] = cleanMarkdownLine(cells[idx] || '');
+    });
+    return row;
+  });
+
+  return { headers, dataRows };
 }

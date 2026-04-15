@@ -1,6 +1,7 @@
 """LangChain prompt templates for tutoring and structured analysis."""
 
 import re
+from config import Config
 
 try:
     from langchain_core.prompts import ChatPromptTemplate
@@ -26,6 +27,49 @@ MODE_SYSTEM_INSTRUCTIONS = {
 
 VALID_MODES = {'direct', 'supportive', 'socratic', 'supportive_socratic'}
 VALID_LEVELS = {'beginner', 'intermediate', 'advanced'}
+
+INTENT_OUTPUT_PLANS = {
+    'definition_explanation': {
+        'sections': ['explanation', 'examples'],
+        'structured_intent': 'examples',
+    },
+    'how_to_steps': {
+        'sections': ['explanation', 'steps'],
+        'structured_intent': None,
+    },
+    'comparison_choice': {
+        'sections': ['explanation', 'table'],
+        'structured_intent': 'comparison',
+    },
+    'debugging_fix': {
+        'sections': ['explanation', 'steps', 'code'],
+        'structured_intent': None,
+    },
+    'code_generation': {
+        'sections': ['explanation', 'code'],
+        'structured_intent': None,
+    },
+    'code_explanation': {
+        'sections': ['explanation', 'code'],
+        'structured_intent': None,
+    },
+    'concept_quiz': {
+        'sections': ['explanation', 'practice'],
+        'structured_intent': None,
+    },
+    'recap_summarize': {
+        'sections': ['explanation', 'steps'],
+        'structured_intent': None,
+    },
+    'roadmap_learning_plan': {
+        'sections': ['explanation', 'options', 'practice'],
+        'structured_intent': 'multi_idea',
+    },
+    'general_fallback': {
+        'sections': ['explanation'],
+        'structured_intent': None,
+    },
+}
 
 
 def normalize_mode(mode: str) -> str:
@@ -71,6 +115,62 @@ def select_code_style_profile(learner_level: str, question_type: str, has_code: 
     )
 
 
+def detect_dynamic_intent(question_type: str, user_message: str, has_code: bool) -> str:
+    qtype = (question_type or 'general').strip().lower()
+    msg = (user_message or '').strip().lower()
+
+    if re.search(r'\b(compare|comparison|difference|vs\.?|versus|which is better)\b', msg) or qtype == 'comparison':
+        return 'comparison_choice'
+    if re.search(r'\b(debug|error|traceback|exception|fix|bug|fails?|not working)\b', msg) or qtype == 'debugging':
+        return 'debugging_fix'
+    if re.search(r'\b(write code|build code|generate code|code example|snippet)\b', msg) or qtype == 'code_request':
+        return 'code_generation'
+    if re.search(r'\b(explain this code|what does this code|walk me through code)\b', msg):
+        return 'code_explanation'
+    if re.search(r'\b(quiz|test me|ask me questions?|practice questions?)\b', msg):
+        return 'concept_quiz'
+    if re.search(r'\b(roadmap|study plan|learning plan|how should i learn|path to learn)\b', msg):
+        return 'roadmap_learning_plan'
+    if re.search(r'\b(summarize|summary|recap|tl;dr)\b', msg):
+        return 'recap_summarize'
+    if re.search(r'\b(how to|steps|step by step|implement)\b', msg) or qtype == 'how_to':
+        return 'how_to_steps'
+    if re.search(r'\b(what is|define|explain|meaning of)\b', msg) or qtype in {'definition', 'why'}:
+        return 'definition_explanation'
+    if has_code:
+        return 'code_explanation'
+    return 'general_fallback'
+
+
+def select_dynamic_output_plan(
+    intent: str,
+    uncertainty_markers: int,
+    complexity: str,
+) -> dict:
+    intent_key = intent if intent in INTENT_OUTPUT_PLANS else 'general_fallback'
+    preset = INTENT_OUTPUT_PLANS[intent_key]
+    sections = list(preset['sections'])
+
+    if int(uncertainty_markers or 0) >= 2 and 'practice' not in sections:
+        sections.append('practice')
+
+    max_sections = 4
+    if len(sections) > max_sections:
+        sections = sections[:max_sections]
+
+    return {
+        'intent': intent_key,
+        'sections': sections,
+        'max_sections': max_sections,
+        'max_questions': 1,
+        'structured_response_required': preset['structured_intent'] is not None,
+        'structured_intent': preset['structured_intent'],
+        'confusion_state': int(uncertainty_markers or 0) >= 2,
+        'rationale': f'dynamic_intent_router:{intent_key}; complexity:{normalize_level(complexity)}',
+        'confidence': 0.65,
+    }
+
+
 def select_output_plan(
     question_type: str,
     complexity: str,
@@ -81,6 +181,18 @@ def select_output_plan(
     user_message: str = '',
 ) -> dict:
     """Select a compact, adaptive response plan from weak/strong learner signals."""
+    if Config.DYNAMIC_INTENT_ROUTER_ENABLED:
+        intent = detect_dynamic_intent(
+            question_type=question_type,
+            user_message=user_message,
+            has_code=has_code,
+        )
+        return select_dynamic_output_plan(
+            intent=intent,
+            uncertainty_markers=uncertainty_markers,
+            complexity=complexity,
+        )
+
     qt = (question_type or 'general').strip().lower()
     cx = normalize_level(complexity)
     uncertainty = int(uncertainty_markers or 0)

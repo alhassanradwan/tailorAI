@@ -3,6 +3,7 @@
 import logging
 import re
 
+from config import Config
 from services.langchain_provider import LangChainProvider
 from services.langchain_prompts import (
     get_tutor_prompt_template,
@@ -13,6 +14,7 @@ from services.langchain_prompts import (
     select_code_style_profile,
     select_output_plan,
 )
+from services.langchain_schemas import DynamicContentBlock, build_text_only_dynamic_envelope
 
 logger = logging.getLogger(__name__)
 
@@ -227,6 +229,127 @@ def _format_general_response(text: str) -> str:
     )
 
 
+def _split_heading_blocks(text: str) -> list[tuple[str | None, str]]:
+    lines = (text or '').splitlines()
+    if not lines:
+        return []
+
+    blocks = []
+    current_title = None
+    current_lines = []
+    heading_pattern = re.compile(r'^(?:#{1,6}\s*)?([A-Za-z][A-Za-z ]{2,40})\s*:?$')
+
+    for line in lines:
+        stripped = line.strip()
+        heading_match = heading_pattern.match(stripped) if stripped else None
+        if heading_match:
+            if current_lines:
+                blocks.append((current_title, '\n'.join(current_lines).strip()))
+                current_lines = []
+            current_title = heading_match.group(1).strip()
+            continue
+        current_lines.append(line)
+
+    if current_lines:
+        blocks.append((current_title, '\n'.join(current_lines).strip()))
+
+    return [(title, content) for title, content in blocks if content]
+
+
+def _guess_block_type(title: str | None, content: str) -> str:
+    title_norm = (title or '').strip().lower()
+    content_norm = (content or '').lower()
+
+    if title_norm in {'comparison'}:
+        return 'comparison_table'
+    if title_norm in {'examples', 'example'}:
+        return 'steps'
+    if title_norm in {'key points', 'steps', 'approach', 'checklist'}:
+        return 'steps'
+    if title_norm in {'quiz', 'practice'}:
+        return 'quiz'
+    if title_norm in {'hint', 'hints'}:
+        return 'hint'
+    if '```' in content_norm:
+        return 'code'
+    if '?' in content_norm and len(content_norm) < 240:
+        return 'follow_up'
+    if title_norm in {'explanation', 'summary', 'concept'}:
+        return 'explanation'
+    return 'text'
+
+
+def _build_dynamic_envelope(response_text: str, plan: dict, fallback_reason: str | None = None):
+    intent = (plan or {}).get('intent') or (plan or {}).get('structured_intent') or 'general_fallback'
+    blocks = []
+    for title, content in _split_heading_blocks(response_text):
+        blocks.append({
+            'type': _guess_block_type(title, content),
+            'title': title,
+            'text': content,
+        })
+
+    # If no headings were detected, keep a safe text block.
+    if not blocks:
+        envelope = build_text_only_dynamic_envelope(
+            response_text=response_text,
+            intent=intent,
+            confidence=float((plan or {}).get('confidence', 0.0) or 0.0),
+            fallback_used=bool(fallback_reason),
+            fallback_reason=fallback_reason,
+        )
+        return envelope.model_dump()
+
+    envelope = build_text_only_dynamic_envelope(
+        response_text='',
+        intent=intent,
+        confidence=float((plan or {}).get('confidence', 0.0) or 0.0),
+        fallback_used=bool(fallback_reason),
+        fallback_reason=fallback_reason,
+    )
+    envelope.content_blocks = [
+        DynamicContentBlock(
+            type=b['type'],
+            title=b.get('title'),
+            text=b.get('text'),
+            language=None,
+            rows=[],
+            items=[],
+        )
+        for b in blocks
+    ]
+    return envelope.model_dump()
+
+
+def _soft_validate_response_text(text: str, plan: dict) -> tuple[str, dict]:
+    """Validate minimal quality constraints without forcing a rigid rewrite."""
+    meta = {
+        'formatter_applied': False,
+        'formatter_reason': None,
+    }
+
+    content = (text or '').strip()
+    if not content:
+        return content, meta
+
+    # Only apply tiny repairs when the model returns low-utility text.
+    if len(content) < 20:
+        repaired = f"Explanation\n{content}"
+        if repaired != content:
+            meta['formatter_applied'] = True
+            meta['formatter_reason'] = 'minimal_quality_repair'
+        return repaired, meta
+
+    if (plan or {}).get('structured_response_required') and not _looks_structured_response(content):
+        repaired = f"Explanation\n{content}"
+        if repaired != content:
+            meta['formatter_applied'] = True
+            meta['formatter_reason'] = 'minimal_structure_repair'
+        return repaired, meta
+
+    return content, meta
+
+
 def _enforce_structured_output(text: str, plan: dict) -> tuple[str, dict]:
     meta = {
         'formatter_applied': False,
@@ -357,11 +480,20 @@ class LangChainGenerator:
             if not response_text:
                 return {'used': False, 'response': '', 'tokens_used': 0, 'error': 'empty_response'}
 
-            response_text, format_meta = _enforce_structured_output(response_text, plan)
+            if Config.DYNAMIC_CHAT_SCHEMA_ENABLED:
+                response_text, format_meta = _soft_validate_response_text(response_text, plan)
+            else:
+                response_text, format_meta = _enforce_structured_output(response_text, plan)
 
             usage = getattr(result, 'response_metadata', {}) or {}
             token_usage = usage.get('token_usage', {}) if isinstance(usage, dict) else {}
             tokens_used = token_usage.get('total_tokens', 0) if isinstance(token_usage, dict) else 0
+
+            dynamic_response = _build_dynamic_envelope(
+                response_text=response_text,
+                plan=plan,
+                fallback_reason=format_meta.get('formatter_reason') if format_meta.get('formatter_applied') else None,
+            )
 
             return {
                 'used': True,
@@ -373,6 +505,7 @@ class LangChainGenerator:
                 'sections': sections,
                 'formatter_applied': bool(format_meta.get('formatter_applied', False)),
                 'formatter_reason': format_meta.get('formatter_reason'),
+                'dynamic_response': dynamic_response,
             }
         except Exception as e:
             logger.warning('LangChain generator failed: %s', e)

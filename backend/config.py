@@ -41,6 +41,10 @@ class Config:
 
     # RAG integration feature flag (default: disabled for safe rollout)
     USE_RAG = os.getenv('USE_RAG', 'false').strip().lower() in ('1', 'true', 'yes', 'on')
+
+    # Dynamic chat schema rollout flags (default: disabled for safe rollout)
+    DYNAMIC_CHAT_SCHEMA_ENABLED = os.getenv('DYNAMIC_CHAT_SCHEMA_ENABLED', 'true').strip().lower() in ('1', 'true', 'yes', 'on')
+    DYNAMIC_INTENT_ROUTER_ENABLED = os.getenv('DYNAMIC_INTENT_ROUTER_ENABLED', 'true').strip().lower() in ('1', 'true', 'yes', 'on')
     
     # CORS settings (allow frontend to connect)
     # In production, set CORS_ORIGINS env var as comma-separated URLs
