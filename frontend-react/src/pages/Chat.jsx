@@ -18,21 +18,14 @@ const SUGGESTIONS = {
 const STORAGE_PREFIX = 'adaptiveai';
 const profilePicKey = (userKey) => `${STORAGE_PREFIX}:${userKey}:profilePic`;
 
-const TONE_DROPDOWN_OPTIONS = [
-  { value: 'auto', label: 'Auto' },
-  { value: 'friendly', label: 'Friendly' },
-  { value: 'professional', label: 'Professional' },
-  { value: 'socratic', label: 'Socratic' },
-  { value: 'concise', label: 'Concise' },
-];
+const TONE_DROPDOWN_VALUES = ['auto', 'friendly', 'professional', 'socratic', 'concise'];
+const MODE_DROPDOWN_VALUES = ['auto', 'direct', 'supportive', 'socratic', 'supportive_socratic'];
 
-const MODE_DROPDOWN_OPTIONS = [
-  { value: 'auto', label: 'Auto' },
-  { value: 'direct', label: 'Direct' },
-  { value: 'supportive', label: 'Supportive' },
-  { value: 'socratic', label: 'Socratic' },
-  { value: 'supportive_socratic', label: 'Supportive Socratic' },
-];
+const MODE_REASON_KEY_MAP = {
+  'stable understanding detected': 'chat.modeReasons.stableUnderstanding',
+  'user selected tutoring mode': 'chat.modeReasons.userSelectedMode',
+  'identity lookup request': 'chat.identityLookupReason',
+};
 
 const MAX_FILE_EXTRACT_CHARS = 7000;
 const TEXT_FILE_EXTENSIONS = new Set([
@@ -71,6 +64,12 @@ function isLikelyTextFile(file) {
   return false;
 }
 
+function widthFromLabel(label, minCh = 5) {
+  const text = (label || '').toString().trim();
+  const widthCh = Math.max(minCh, text.length + 2.2);
+  return `${widthCh}ch`;
+}
+
 export default function Chat() {
   const { t, i18n } = useTranslation();
   const { user, profile, setProfile, chatMessages, setChatMessages, saveContext, selectedTone } = useAuth();
@@ -97,6 +96,39 @@ export default function Chat() {
 
   const strongest = profile?.domain_analysis?.strongest_domain || 'Machine Learning';
   const suggestions = SUGGESTIONS[strongest] || SUGGESTIONS['Machine Learning'];
+
+  const toneDropdownOptions = useMemo(
+    () => TONE_DROPDOWN_VALUES.map((value) => ({
+      value,
+      label: t(`chat.toneOptions.${value}`),
+    })),
+    [t]
+  );
+
+  const modeDropdownOptions = useMemo(
+    () => MODE_DROPDOWN_VALUES.map((value) => ({
+      value,
+      label: t(`chat.modeOptions.${value}`),
+    })),
+    [t]
+  );
+
+  const localizedModeReason = useMemo(() => {
+    const normalized = (modeReason || '').toString().trim().toLowerCase();
+    const key = MODE_REASON_KEY_MAP[normalized];
+    if (!key) return modeReason;
+    return t(key);
+  }, [modeReason, t]);
+
+  const selectedToneLabel = useMemo(
+    () => toneDropdownOptions.find((opt) => opt.value === toneChoice)?.label || '',
+    [toneDropdownOptions, toneChoice]
+  );
+
+  const selectedModeLabel = useMemo(
+    () => modeDropdownOptions.find((opt) => opt.value === modeChoice)?.label || '',
+    [modeDropdownOptions, modeChoice]
+  );
 
   // Auto scroll
   useEffect(() => {
@@ -311,10 +343,6 @@ export default function Chat() {
     ? `${(profile.domain_analysis.overall_accuracy || 0).toFixed(0)}%`
     : (profile?.estimated_skill_level || 'Beginner');
 
-  const profileStrongest = profile?.domain_analysis
-    ? profile.domain_analysis.strongest_domain?.split(' ')[0]
-    : 'General';
-
   useEffect(() => {
     const prefToneRaw =
       profile?.conversation_preferences?.preferred_tone
@@ -524,19 +552,28 @@ export default function Chat() {
             <h3 id="studentNameDisplay">{user?.name || profile?.name || t('common.student')}</h3>
             <div className="chat-header-stats">
               <span className="stat-chip">{profileScore}</span>
-              <span className="stat-chip">{profileStrongest}</span>
-              <label className="header-inline-control" title="Choose tone">
-                <span className="header-inline-label">Tone:</span>
-                <select value={toneChoice} onChange={handleToneChange} aria-label="Tone selector">
-                  {TONE_DROPDOWN_OPTIONS.map((opt) => (
+              <label className="header-inline-control" title={t('chat.tooltips.chooseTone')}>
+                <span className="header-inline-label">{t('chat.labels.tone')}:</span>
+                <select
+                  value={toneChoice}
+                  onChange={handleToneChange}
+                  aria-label={t('chat.aria.toneSelector')}
+                  style={{ width: widthFromLabel(selectedToneLabel, 5) }}
+                >
+                  {toneDropdownOptions.map((opt) => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
                 </select>
               </label>
-              <label className="header-inline-control" title={modeReason}>
-                <span className="header-inline-label">Mode:</span>
-                <select value={modeChoice} onChange={handleModeChange} aria-label="Mode selector">
-                  {MODE_DROPDOWN_OPTIONS.map((opt) => (
+              <label className="header-inline-control" title={localizedModeReason || ''}>
+                <span className="header-inline-label">{t('chat.labels.mode')}:</span>
+                <select
+                  value={modeChoice}
+                  onChange={handleModeChange}
+                  aria-label={t('chat.aria.modeSelector')}
+                  style={{ width: widthFromLabel(selectedModeLabel, 6) }}
+                >
+                  {modeDropdownOptions.map((opt) => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
                 </select>
@@ -651,7 +688,6 @@ export default function Chat() {
                 <line x1="22" y1="2" x2="11" y2="13" />
                 <polygon points="22 2 15 22 11 13 2 9 22 2" />
               </svg>
-              <span>{t('chat.send')}</span>
             </button>
           </div>
 

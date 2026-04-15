@@ -71,6 +71,35 @@
   "chat": {
     "openSidebar": "Open sidebar",
     "modeLabel": "Mode",
+    "labels": {
+      "tone": "Tone",
+      "mode": "Mode"
+    },
+    "aria": {
+      "toneSelector": "Tone selector",
+      "modeSelector": "Mode selector"
+    },
+    "tooltips": {
+      "chooseTone": "Choose tone"
+    },
+    "toneOptions": {
+      "auto": "Auto",
+      "friendly": "Friendly",
+      "professional": "Professional",
+      "socratic": "Socratic",
+      "concise": "Concise"
+    },
+    "modeOptions": {
+      "auto": "Auto",
+      "direct": "Direct",
+      "supportive": "Supportive",
+      "socratic": "Socratic",
+      "supportive_socratic": "Supportive Socratic"
+    },
+    "modeReasons": {
+      "stableUnderstanding": "stable understanding detected",
+      "userSelectedMode": "user selected tutoring mode"
+    },
     "welcomeTitle": "Welcome, {{name}}!",
     "welcomeSubtitle": "I'm your Personalized AI tutor. Ask me anything about Data Science, Machine Learning, or Deep Learning.",
     "typingAlt": "Loading...",
@@ -260,6 +289,8 @@
       "mode": "Mode",
       "userId": "User ID",
       "message": "Message",
+      "topics": "Topics",
+      "complexity": "Complexity",
       "timestamp": "Timestamp"
     },
     "userDetail": {

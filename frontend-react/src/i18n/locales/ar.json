@@ -71,6 +71,35 @@
   "chat": {
     "openSidebar": "فتح الشريط الجانبي",
     "modeLabel": "الوضع",
+    "labels": {
+      "tone": "النبرة",
+      "mode": "الوضع"
+    },
+    "aria": {
+      "toneSelector": "اختيار النبرة",
+      "modeSelector": "اختيار الوضع"
+    },
+    "tooltips": {
+      "chooseTone": "اختر النبرة"
+    },
+    "toneOptions": {
+      "auto": "تلقائي",
+      "friendly": "ودود",
+      "professional": "احترافي",
+      "socratic": "سقراطي",
+      "concise": "مختصر"
+    },
+    "modeOptions": {
+      "auto": "تلقائي",
+      "direct": "مباشر",
+      "supportive": "داعم",
+      "socratic": "سقراطي",
+      "supportive_socratic": "داعم سقراطي"
+    },
+    "modeReasons": {
+      "stableUnderstanding": "تم اكتشاف فهم مستقر",
+      "userSelectedMode": "تم اختيار وضع التدريس من المستخدم"
+    },
     "welcomeTitle": "مرحباً، {{name}}!",
     "welcomeSubtitle": "أنا معلمك الذكي المخصص. اسألني أي شيء عن علوم البيانات أو تعلم الآلة أو التعلم العميق.",
     "typingAlt": "جار التحميل...",
@@ -260,6 +289,8 @@
       "mode": "الوضع",
       "userId": "معرف المستخدم",
       "message": "الرسالة",
+      "topics": "المواضيع",
+      "complexity": "التعقيد",
       "timestamp": "الوقت"
     },
     "userDetail": {

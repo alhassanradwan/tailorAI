@@ -6,6 +6,29 @@ from database import Database
 
 class AdminService:
     @staticmethod
+    def _normalize_interaction(doc):
+        analysis = doc.get('analysis', {}) if isinstance(doc.get('analysis', {}), dict) else {}
+        topics = analysis.get('topics', [])
+        if not isinstance(topics, list):
+            topics = []
+
+        return {
+            'user_id': doc.get('user_id', ''),
+            'user_message': doc.get('user_message') or doc.get('message', ''),
+            'ai_response': doc.get('ai_response', ''),
+            'agent': doc.get('agent', ''),
+            'agent_name': doc.get('agent_name', ''),
+            'tutoring_mode': doc.get('tutoring_mode') or analysis.get('mode'),
+            'mode_reason': doc.get('mode_reason') or analysis.get('mode_reason', ''),
+            'topics': topics,
+            'complexity': analysis.get('complexity', ''),
+            'question_type': analysis.get('question_type', ''),
+            'tokens_used': int(doc.get('tokens_used', 0) or 0),
+            'response_time_ms': int(doc.get('response_time_ms', 0) or 0),
+            'timestamp': doc.get('timestamp', ''),
+        }
+
+    @staticmethod
     def get_users_overview(limit=100):
         users_coll = Database.get_collection('users')
         ks_coll = Database.get_collection('knowledge_states')
@@ -139,6 +162,39 @@ class AdminService:
         return out
 
     @staticmethod
+    def get_user_recent_interactions(user_id, limit=20):
+        interactions_coll = Database.get_collection('interactions')
+
+        docs = list(
+            interactions_coll.find(
+                {'user_id': user_id},
+                {
+                    '_id': 0,
+                    'user_id': 1,
+                    'user_message': 1,
+                    'message': 1,
+                    'ai_response': 1,
+                    'agent': 1,
+                    'agent_name': 1,
+                    'tutoring_mode': 1,
+                    'mode_reason': 1,
+                    'analysis.topics': 1,
+                    'analysis.complexity': 1,
+                    'analysis.question_type': 1,
+                    'analysis.mode': 1,
+                    'analysis.mode_reason': 1,
+                    'tokens_used': 1,
+                    'response_time_ms': 1,
+                    'timestamp': 1,
+                },
+            )
+            .sort('timestamp', -1)
+            .limit(int(limit))
+        )
+
+        return [AdminService._normalize_interaction(d) for d in docs]
+
+    @staticmethod
     def get_user_detail(user_id, interactions_limit=10):
         users_coll = Database.get_collection('users')
         ks_coll = Database.get_collection('knowledge_states')
@@ -180,8 +236,18 @@ class AdminService:
                     '_id': 0,
                     'user_message': 1,
                     'message': 1,
+                    'ai_response': 1,
+                    'agent': 1,
+                    'agent_name': 1,
                     'tutoring_mode': 1,
+                    'mode_reason': 1,
+                    'analysis.topics': 1,
+                    'analysis.complexity': 1,
+                    'analysis.question_type': 1,
                     'analysis.mode': 1,
+                    'analysis.mode_reason': 1,
+                    'tokens_used': 1,
+                    'response_time_ms': 1,
                     'timestamp': 1,
                 },
             )
@@ -189,13 +255,7 @@ class AdminService:
             .limit(int(interactions_limit))
         )
 
-        recent_interactions = []
-        for r in recent:
-            recent_interactions.append({
-                'user_message': r.get('user_message') or r.get('message', ''),
-                'tutoring_mode': r.get('tutoring_mode') or r.get('analysis', {}).get('mode'),
-                'timestamp': r.get('timestamp', ''),
-            })
+        recent_interactions = [AdminService._normalize_interaction(r) for r in recent]
 
         return {
             'user_id': user_id,
