@@ -70,6 +70,15 @@ function widthFromLabel(label, minCh = 5) {
   return `${widthCh}ch`;
 }
 
+function toSkillLabel(value) {
+  const v = (value || '').toString().trim().toLowerCase();
+  if (!v) return '';
+  if (v === 'beginner' || v === 'intermediate' || v === 'advanced') {
+    return v.charAt(0).toUpperCase() + v.slice(1);
+  }
+  return '';
+}
+
 export default function Chat() {
   const { t, i18n } = useTranslation();
   const { user, profile, setProfile, chatMessages, setChatMessages, saveContext, selectedTone } = useAuth();
@@ -79,6 +88,7 @@ export default function Chat() {
   const [currentSession, setCurrentSession] = useState(null);
   const [activeMode, setActiveMode] = useState('direct');
   const [modeReason, setModeReason] = useState('stable understanding detected');
+  const [analysisComplexity, setAnalysisComplexity] = useState('');
   const [toneChoice, setToneChoice] = useState('auto');
   const [modeChoice, setModeChoice] = useState('auto');
   const [isListening, setIsListening] = useState(false);
@@ -309,6 +319,15 @@ export default function Chat() {
 
         if (data.mode) setActiveMode(data.mode);
         if (data.reason) setModeReason(data.reason);
+        if (data.analysis?.complexity) {
+          const nextSkill = String(data.analysis.complexity);
+          setAnalysisComplexity(nextSkill);
+          setProfile((prev) => prev ? {
+            ...prev,
+            estimated_skill_level: nextSkill,
+            skill_level: nextSkill,
+          } : prev);
+        }
 
         ChatHistory.addMessage(userKey, session.id, { text: data.response, sender: 'agent', timestamp: new Date().toISOString() });
 
@@ -345,9 +364,80 @@ export default function Chat() {
     }
   };
 
-  const profileScore = profile?.domain_analysis
-    ? `${(profile.domain_analysis.overall_accuracy || 0).toFixed(0)}%`
-    : (profile?.estimated_skill_level || 'Beginner');
+  const profileScore =
+    toSkillLabel(analysisComplexity)
+    || toSkillLabel(profile?.estimated_skill_level)
+    || toSkillLabel(profile?.skill_level)
+    || toSkillLabel(profile?.python)
+    || (profile?.domain_analysis
+      ? `${(profile.domain_analysis.overall_accuracy || 0).toFixed(0)}%`
+      : 'Beginner');
+
+  useEffect(() => {
+    const fallbackSkill =
+      profile?.estimated_skill_level
+      || profile?.skill_level
+      || profile?.python
+      || '';
+    if (!analysisComplexity && fallbackSkill) {
+      setAnalysisComplexity(String(fallbackSkill));
+    }
+  }, [analysisComplexity, profile?.estimated_skill_level, profile?.skill_level, profile?.python]);
+
+  useEffect(() => {
+    const uid = user?.id || user?.user_id;
+    if (!uid) return;
+    let cancelled = false;
+
+    const syncFromLatestHistory = async () => {
+      try {
+        const { data } = await api.get(`/chat/history/${uid}`);
+        const latest = Array.isArray(data?.history) ? data.history[0] : null;
+        const historyComplexity = latest?.analysis?.complexity;
+        if (!cancelled && historyComplexity && !analysisComplexity) {
+          setAnalysisComplexity(String(historyComplexity));
+          setProfile((prev) => prev ? {
+            ...prev,
+            estimated_skill_level: String(historyComplexity),
+            skill_level: String(historyComplexity),
+          } : prev);
+        }
+      } catch {
+        // Non-blocking: fallback to profile-based badge when history is unavailable.
+      }
+    };
+
+    syncFromLatestHistory();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, user?.user_id, analysisComplexity, setProfile]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const syncFromAnalytics = async () => {
+      try {
+        const { data } = await api.get('/analytics/summary');
+        const analyticsLevel = data?.summary?.skill_level;
+        if (!cancelled && analyticsLevel) {
+          setAnalysisComplexity(String(analyticsLevel));
+          setProfile((prev) => prev ? {
+            ...prev,
+            estimated_skill_level: String(analyticsLevel),
+            skill_level: String(analyticsLevel),
+          } : prev);
+        }
+      } catch {
+        // Non-blocking fallback: badge can still sync from latest chat response/history.
+      }
+    };
+
+    syncFromAnalytics();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, user?.user_id, setProfile]);
 
   useEffect(() => {
     const prefToneRaw =

@@ -22,7 +22,7 @@ from services.adaptive_mode_service import AdaptiveModeService
 from services.langchain_analyzer import LangChainAnalyzer
 from services.langchain_generator import LangChainGenerator
 from services.langchain_prompts import select_output_plan
-from services.langchain_schemas import build_text_only_dynamic_envelope
+from services.langchain_schemas import DynamicContentBlock, build_text_only_dynamic_envelope
 
 logger = logging.getLogger(__name__)
 
@@ -260,14 +260,16 @@ def _build_dynamic_response_payload(
             if current_lines:
                 content = '\n'.join(current_lines).strip()
                 if content:
-                    blocks.append({
-                        'type': _dynamic_block_type_from_title(current_title, content),
-                        'title': current_title,
-                        'text': content,
-                        'language': None,
-                        'rows': [],
-                        'items': [],
-                    })
+                    blocks.append(
+                        DynamicContentBlock(
+                            type=_dynamic_block_type_from_title(current_title, content),
+                            title=current_title,
+                            text=content,
+                            language=None,
+                            rows=[],
+                            items=[],
+                        )
+                    )
                 current_lines = []
             current_title = heading_match.group(1).strip()
             continue
@@ -276,14 +278,16 @@ def _build_dynamic_response_payload(
     if current_lines:
         content = '\n'.join(current_lines).strip()
         if content:
-            blocks.append({
-                'type': _dynamic_block_type_from_title(current_title, content),
-                'title': current_title,
-                'text': content,
-                'language': None,
-                'rows': [],
-                'items': [],
-            })
+            blocks.append(
+                DynamicContentBlock(
+                    type=_dynamic_block_type_from_title(current_title, content),
+                    title=current_title,
+                    text=content,
+                    language=None,
+                    rows=[],
+                    items=[],
+                )
+            )
 
     if not blocks:
         return build_text_only_dynamic_envelope(
@@ -300,9 +304,9 @@ def _build_dynamic_response_payload(
         confidence=confidence,
         fallback_used=fallback_used,
         fallback_reason=fallback_reason,
-    ).model_dump()
-    payload['content_blocks'] = blocks
-    return payload
+    )
+    payload.content_blocks = blocks
+    return payload.model_dump()
 
 
 def _normalize_forced_mode(value: str) -> str:
@@ -889,6 +893,8 @@ Only use what is directly relevant to the student's question.
 
         # 2b. RAG retrieval (feature-flagged, fail-safe)
         rag_context = None
+        rag_used = False
+        rag_primary_concepts = []
         if Config.USE_RAG:
             try:
                 from services.rag.rag_router import RAGRouter
@@ -898,7 +904,9 @@ Only use what is directly relevant to the student's question.
                 rag_result = RAGRouter.retrieve(agent_key, message, student_context)
                 if rag_result:
                     rag_context = rag_result.get('formatted_context', '') or None
+                    rag_primary_concepts = rag_result.get('primary_concepts', []) or []
                     if rag_context:
+                        rag_used = True
                         logger.info('RAG context retrieved for domain=%s concepts=%s',
                                     agent_key, rag_result.get('primary_concepts', []))
             except Exception as e:
@@ -1019,6 +1027,8 @@ Only use what is directly relevant to the student's question.
                         'generation': {
                             'path': 'langchain',
                             'langchain_used': True,
+                            'rag_used': rag_used,
+                            'rag_primary_concepts': rag_primary_concepts,
                             'structured_required': bool(generation_plan.get('structured_response_required', False)),
                             'structured_intent': generation_plan.get('structured_intent'),
                             'intent': generation_plan.get('intent'),
@@ -1100,6 +1110,8 @@ Only use what is directly relevant to the student's question.
             'generation': {
                 'path': 'native_groq',
                 'langchain_used': False,
+                'rag_used': rag_used,
+                'rag_primary_concepts': rag_primary_concepts,
                 'structured_required': bool(generation_plan.get('structured_response_required', False)),
                 'structured_intent': generation_plan.get('structured_intent'),
                 'intent': generation_plan.get('intent'),

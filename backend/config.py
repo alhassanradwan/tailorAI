@@ -39,8 +39,8 @@ class Config:
     # LangChain integration feature flag (default: enabled)
     USE_LANGCHAIN = os.getenv('USE_LANGCHAIN', 'true').strip().lower() in ('1', 'true', 'yes', 'on')
 
-    # RAG integration feature flag (default: disabled for safe rollout)
-    USE_RAG = os.getenv('USE_RAG', 'false').strip().lower() in ('1', 'true', 'yes', 'on')
+    # RAG integration feature flag (default: enabled)
+    USE_RAG = os.getenv('USE_RAG', 'true').strip().lower() in ('1', 'true', 'yes', 'on')
 
     # Dynamic chat schema rollout flags (default: disabled for safe rollout)
     DYNAMIC_CHAT_SCHEMA_ENABLED = os.getenv('DYNAMIC_CHAT_SCHEMA_ENABLED', 'true').strip().lower() in ('1', 'true', 'yes', 'on')
