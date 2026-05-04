@@ -34,8 +34,8 @@ class Config:
     
     # API Keys (for future use with AI agents)
     OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
-    HUGGINGFACE_API_KEY = os.getenv('HUGGINGFACE_API_KEY', '')
-    HF_TOKEN = os.getenv('HF_TOKEN', '')
+    HUGGINGFACE_API_TOKEN = os.getenv('HUGGINGFACEHUB_API_TOKEN', '')
+
 
     # LangChain integration feature flag (default: enabled)
     USE_LANGCHAIN = os.getenv('USE_LANGCHAIN', 'true').strip().lower() in ('1', 'true', 'yes', 'on')

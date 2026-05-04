@@ -19,18 +19,16 @@ import os
 from typing import Optional
 from config import Config
 
-HF_TOKEN = Config.HF_TOKEN
-
 logger = logging.getLogger(__name__)
 
 # ── Config ────────────────────────────────────────────────────────────────
 MODEL_ID = os.getenv("WHISPER_MODEL", "openai/whisper-large-v3")
-HF_TOKEN = Config.HF_TOKEN
+HF_TOKEN = Config.HUGGINGFACE_API_TOKEN
 
 if not HF_TOKEN:
     raise ValueError("HF_TOKEN environment variable is not set.")
 
-# Lazy client
+
 _client = None
 
 
