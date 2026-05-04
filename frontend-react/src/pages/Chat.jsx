@@ -107,6 +107,7 @@ export default function Chat() {
   const fileInputRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
+  const cancelVoiceRef = useRef(false);
 
   const userKey = useMemo(() => (user?.id || user?.email || 'guest'), [user?.id, user?.email]);
 
@@ -613,6 +614,7 @@ export default function Chat() {
 
   const handleVoiceInput = async () => {
     if (isListening) {
+      cancelVoiceRef.current = false;
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
       }
@@ -624,6 +626,7 @@ export default function Chat() {
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
+      cancelVoiceRef.current = false;
 
       mediaRecorder.onstart = () => {
         setIsListening(true);
@@ -638,6 +641,12 @@ export default function Chat() {
       mediaRecorder.onstop = async () => {
         setIsListening(false);
         stream.getTracks().forEach((track) => track.stop());
+
+        if (cancelVoiceRef.current) {
+          audioChunksRef.current = [];
+          cancelVoiceRef.current = false;
+          return;
+        }
 
         const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType || 'audio/webm' });
         audioChunksRef.current = [];
@@ -669,6 +678,15 @@ export default function Chat() {
     } catch (error) {
       console.error('Microphone access denied or error:', error);
       pushLocalAgentMessage(t('chat.voiceNotSupported'));
+    }
+  };
+
+  const cancelVoiceInput = () => {
+    if (isListening) {
+      cancelVoiceRef.current = true;
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
     }
   };
 
@@ -843,8 +861,21 @@ export default function Chat() {
             </button>
 
             {isListening && (
-              <div className="voice-overlay" onClick={handleVoiceInput}>
-                <div className="voice-overlay-content">
+              <div className="voice-overlay">
+                <div className="voice-overlay-content" onClick={handleVoiceInput} style={{ cursor: 'pointer' }}>
+                  <button 
+                    className="voice-close-btn" 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      cancelVoiceInput();
+                    }}
+                    aria-label="Cancel recording"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
                   <div className="voice-mic-icon">
                     <svg viewBox="0 0 24 24" fill="currentColor">
                       <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>

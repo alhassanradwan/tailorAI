@@ -13,9 +13,9 @@
   position: absolute;
   bottom: calc(100% + 20px);
   right: 50px;
-  background: rgba(26, 21, 51, 0.95);
-  border: 1px solid rgba(106, 53, 255, 0.4);
-  backdrop-filter: blur(8px);
+  background: rgba(5, 5, 10, 0.98);
+  border: 1px solid rgba(50, 50, 70, 0.6);
+  backdrop-filter: blur(12px);
   border-radius: 20px;
   padding: 1.5rem;
   z-index: 100;
@@ -23,9 +23,8 @@
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  cursor: pointer;
   animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 20px rgba(106, 53, 255, 0.2);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), 0 0 20px rgba(0, 0, 0, 0.5);
 }
 
 @keyframes popIn {
@@ -38,6 +37,31 @@
   flex-direction: column;
   align-items: center;
   gap: 1.2rem;
+  position: relative;
+}
+
+.voice-close-btn {
+  position: absolute;
+  top: -15px;
+  right: -15px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 5px;
+  display: flex;
+  border-radius: 50%;
+  transition: var(--transition);
+}
+
+.voice-close-btn:hover {
+  color: var(--error);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.voice-close-btn svg {
+  width: 20px;
+  height: 20px;
 }
 
 .voice-mic-icon {
