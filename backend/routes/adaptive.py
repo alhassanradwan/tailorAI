@@ -197,15 +197,19 @@ Current student profile:
 
 Return ONLY valid JSON (no markdown):
 {{
-  "topics": ["topic1", "topic2"],
+  "topics": ["topic1"],
   "complexity": "beginner|intermediate|advanced",
-  "question_type": "definition|how_to|why|comparison|debugging|code_request|general",
+  "question_type": "definition|how_to|why|comparison|debugging|code_request|quiz|general",
+  "user_intent": "learning|testing",
   "is_misconception": true/false,
-  "misconception_detail": "what the student may misunderstand (or null)",
-  "is_follow_up": true/false,
+  "misconception_detail": "what is wrong and what is correct (or null)",
   "emotional_state": "confident|curious|confused|frustrated|neutral",
   "suggested_approach": "explain_simply|provide_examples|use_analogy|show_code|ask_questions|correct_misconception"
 }}
+INTENT RULE:
+Set question_type="quiz" and user_intent="testing" ONLY when the user directly requests a quiz using imperative language directed at the system (e.g., "give me a quiz", "test me", "quiz me").
+If quiz-related phrases appear as part of context or indirect speech (e.g., "I have a test tomorrow", "my teacher will give me a quiz"), set user_intent="learning".
+Do NOT trigger quiz intent if the phrase is not a direct request to the system, even if it contains imperative wording in a different context.
 
 Topics should be lowercase with underscores (e.g., neural_networks, gradient_descent).
 Be accurate about complexity - don't overestimate."""

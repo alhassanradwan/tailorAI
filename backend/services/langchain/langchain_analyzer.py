@@ -4,9 +4,9 @@ import json
 import logging
 from pydantic import ValidationError
 
-from services.langchain_provider import LangChainProvider
-from services.langchain_prompts import get_analysis_prompt_template
-from services.langchain_schemas import LangChainAnalysisCues, default_analysis_cues
+from services.langchain.langchain_provider import LangChainProvider
+from services.langchain.langchain_prompts import get_analysis_prompt_template
+from services.langchain.langchain_schemas import LangChainAnalysisCues, default_analysis_cues
 
 logger = logging.getLogger(__name__)
 

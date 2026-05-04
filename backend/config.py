@@ -38,6 +38,9 @@ class Config:
 
     # LangChain integration feature flag (default: enabled)
     USE_LANGCHAIN = os.getenv('USE_LANGCHAIN', 'true').strip().lower() in ('1', 'true', 'yes', 'on')
+    
+    # LangGraph orchestration feature flag (default: disabled)
+    USE_LANGGRAPH = os.getenv('USE_LANGGRAPH', 'false').strip().lower() in ('1', 'true', 'yes', 'on')
 
     # RAG integration feature flag (default: enabled)
     USE_RAG = os.getenv('USE_RAG', 'true').strip().lower() in ('1', 'true', 'yes', 'on')

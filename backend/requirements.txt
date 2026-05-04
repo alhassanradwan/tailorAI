@@ -1,41 +1,53 @@
 # AdaptiveAI Backend Dependencies
-# Python 3.11 required (3.11.x)
+# Python 3.11+ required
 # Install with: pip install -r requirements.txt
 
-# Flask Framework
+# ── Flask Framework ────────────────────────────────────────────────────────────
 flask==3.0.0
 flask-cors==4.0.0
 
-# JWT Authentication
+# ── JWT Authentication ─────────────────────────────────────────────────────────
 flask-jwt-extended==4.6.0
 PyJWT==2.8.0
 
-# MongoDB (with SRV support for Atlas)
+# ── MongoDB ────────────────────────────────────────────────────────────────────
 pymongo[srv]==4.6.1
 dnspython>=2.4.0
 
-# AI APIs
+# ── AI APIs ────────────────────────────────────────────────────────────────────
 openai==1.12.0
-groq==0.4.2
+groq==0.30.0
 httpx==0.27.2
+
+# ── LangChain ecosystem (0.3.x — compatible with langgraph 0.2.x) ─────────────
+# NOTE: langgraph 1.x requires langchain-core>=1.3.0 which is a full major
+# version bump and may break existing code. Pinned to 0.2.x for stability.
 langchain==0.3.27
 langchain-core==0.3.75
 langchain-groq==0.3.8
+langchain-huggingface>=0.1.0,<1.0.0
+langgraph==0.2.75
+
+# ── Data validation ────────────────────────────────────────────────────────────
 pydantic==2.11.7
 
-# RAG — Neo4j knowledge graph retrieval
+# ── RAG — Neo4j knowledge graph retrieval ─────────────────────────────────────
 neo4j>=5.0
 sentence-transformers>=2.7.0
-langchain-huggingface>=0.1.0,<1.0.0
 
-# Environment Variables
+# ── Environment / utils ────────────────────────────────────────────────────────
 python-dotenv==1.0.0
-
-# Password Hashing
 werkzeug==3.0.1
 
-# Rate Limiting
+# ── Rate Limiting ──────────────────────────────────────────────────────────────
 flask-limiter==3.5.0
 
-# Optional: For production deployment
+# ── Production deployment ──────────────────────────────────────────────────────
 gunicorn==21.2.0
+
+# ── STT (Speech-to-Text) — Whisper via HuggingFace ───────────────────────────
+transformers>=4.36.0
+torch>=2.0.0
+torchaudio>=2.0.0
+soundfile>=0.12.1
+librosa>=0.10.0

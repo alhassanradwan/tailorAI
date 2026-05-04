@@ -5,6 +5,98 @@
    analytics, loading, responsive
    ============================================ */
 
+
+/* ============================================
+   Voice Overlay UI
+   ============================================ */
+.voice-overlay {
+  position: absolute;
+  bottom: calc(100% + 20px);
+  right: 50px;
+  background: rgba(26, 21, 51, 0.95);
+  border: 1px solid rgba(106, 53, 255, 0.4);
+  backdrop-filter: blur(8px);
+  border-radius: 20px;
+  padding: 1.5rem;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 20px rgba(106, 53, 255, 0.2);
+}
+
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.8) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.voice-overlay-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.2rem;
+}
+
+.voice-mic-icon {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: #6a35ff;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: #00ffff;
+  box-shadow: 0 0 30px rgba(106, 53, 255, 0.5);
+  animation: pulseMic 2s infinite;
+}
+
+.voice-mic-icon svg {
+  width: 30px;
+  height: 30px;
+}
+
+.voice-wave-container {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 40px;
+}
+
+.wave-bar {
+  width: 4px;
+  border-radius: 2px;
+  background: #00ffff;
+  animation: waveAnim 1.2s ease-in-out infinite;
+}
+
+.wave-bar:nth-child(even) {
+  background: #ff007f;
+}
+
+.wave-bar:nth-child(1) { height: 20%; animation-delay: -1.2s; }
+.wave-bar:nth-child(2) { height: 50%; animation-delay: -1.0s; }
+.wave-bar:nth-child(3) { height: 80%; animation-delay: -0.8s; }
+.wave-bar:nth-child(4) { height: 100%; animation-delay: -0.6s; }
+.wave-bar:nth-child(5) { height: 60%; animation-delay: -0.4s; }
+.wave-bar:nth-child(6) { height: 100%; animation-delay: -0.6s; }
+.wave-bar:nth-child(7) { height: 80%; animation-delay: -0.8s; }
+.wave-bar:nth-child(8) { height: 50%; animation-delay: -1.0s; }
+.wave-bar:nth-child(9) { height: 20%; animation-delay: -1.2s; }
+
+@keyframes pulseMic {
+  0% { transform: scale(1); box-shadow: 0 0 30px rgba(106, 53, 255, 0.5); }
+  50% { transform: scale(1.05); box-shadow: 0 0 50px rgba(106, 53, 255, 0.8); }
+  100% { transform: scale(1); box-shadow: 0 0 30px rgba(106, 53, 255, 0.5); }
+}
+
+@keyframes waveAnim {
+  0%, 100% { transform: scaleY(0.4); }
+  50% { transform: scaleY(1); }
+}
+
 /* ============================================
    CSS VARIABLES & DESIGN TOKENS
    ============================================ */
@@ -1861,6 +1953,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .chat-composer-pill {
+  position: relative;
   min-height: 50px;
   border-radius: 999px;
   background: rgba(42, 42, 46, 0.94);

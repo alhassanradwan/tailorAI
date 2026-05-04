@@ -34,6 +34,7 @@ def _ensure_defaults(doc):
     if not doc:
         return None
     doc.setdefault('topics', {})
+    doc.setdefault('recent_topics', [])
     doc.setdefault('behavioral', {**DEFAULT_BEHAVIORAL})
     for k, v in DEFAULT_BEHAVIORAL.items():
         doc['behavioral'].setdefault(k, v if not isinstance(v, dict) else {**v})
@@ -131,6 +132,15 @@ class KnowledgeStateService:
 
         # 3) per-topic tracking
         now_iso = datetime.utcnow().isoformat()
+        
+        # update recent topics ring buffer (max 10)
+        recent = ks.get('recent_topics', [])
+        for t in topics:
+            if t in recent:
+                recent.remove(t)
+            recent.insert(0, t)
+        ks['recent_topics'] = recent[:10]
+
         for t in topics:
             if t not in topics_map:
                 topics_map[t] = {
@@ -266,4 +276,76 @@ class KnowledgeStateService:
 
         KnowledgeStateService.save(user_id, ks)
         logger.debug("Updated knowledge state for user %s", user_id)
+        return ks
+
+    # ── update from quiz results ────────────────────────────
+    @staticmethod
+    def update_from_quiz(user_id: str, quiz: dict):
+        """
+        Process the results of a quiz to reinforce mastery levels and find weak spots.
+        """
+        ks = KnowledgeStateService.get(user_id)
+        topics_map = ks.get('topics', {})
+        weak = ks.get('weak_topics', [])
+        strong = ks.get('strong_topics', [])
+        
+        # Analyze performance
+        questions = quiz.get('questions', [])
+        answers_submitted = quiz.get('answers_submitted', {})
+        
+        topic_scores = {} # topic -> {'correct': 0, 'total': 0}
+        for q in questions:
+            t = q.get('source_topic') or quiz.get('topic')
+            if t not in topic_scores:
+                topic_scores[t] = {'correct': 0, 'total': 0}
+            
+            topic_scores[t]['total'] += 1
+            if answers_submitted.get(q['question_id'], '').strip().upper() == q['correct_answer']:
+                topic_scores[t]['correct'] += 1
+                
+        now_iso = datetime.utcnow().isoformat()
+        
+        for t, stats in topic_scores.items():
+            if stats['total'] == 0:
+                continue
+                
+            percentage = stats['correct'] / stats['total']
+            
+            # Ensure topic exists in topic map
+            if t not in topics_map:
+                topics_map[t] = {
+                    'count': 1,
+                    'first_seen': now_iso,
+                    'last_seen': now_iso,
+                    'complexity_levels': {'beginner': 0, 'intermediate': 1, 'advanced': 0},
+                    'mastery_level': 0.1,
+                    'verified': False
+                }
+            
+            td = topics_map[t]
+            current_mastery = td.get('mastery_level', 0.1)
+            
+            # Adjust mastery
+            if percentage >= 0.8:
+                # Strong performance
+                td['mastery_level'] = min(1.0, current_mastery + 0.2)
+                td['verified'] = True
+                if t in weak:
+                    weak.remove(t)
+                if t not in strong:
+                    strong.append(t)
+            elif percentage <= 0.4:
+                # Weak performance
+                td['mastery_level'] = max(0.1, current_mastery - 0.2)
+                if t not in weak and t not in strong:
+                    weak.append(t)
+                elif t in strong:
+                    strong.remove(t)
+                    
+        ks['topics'] = topics_map
+        ks['weak_topics'] = weak
+        ks['strong_topics'] = strong
+        
+        KnowledgeStateService.save(user_id, ks)
+        logger.info("[KnowledgeState] Processed quiz results for user %s. Adjusted mastery.", user_id)
         return ks

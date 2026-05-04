@@ -6,7 +6,6 @@ import AdminRoute from './components/AdminRoute';
 import Navbar from './components/Navbar';
 import SpaceBackground from './components/SpaceBackground';
 import Login from './pages/Login';
-import Onboarding from './pages/Onboarding';
 import Chat from './pages/Chat';
 import Analytics from './pages/Analytics';
 import Admin from './pages/Admin';
@@ -29,24 +28,6 @@ function AppRoutes() {
   // Determine where to redirect logged-in users
   const getAuthRedirect = () => {
     if (!user) return '/login';
-    // Check if user has completed onboarding
-    // A user has completed onboarding if they have any of these:
-    // - consent is true
-    // - domain_analysis exists
-    // - major/level exists (from onboarding)
-    // - behavioral_analytics exists with data
-    if (profile) {
-      const hasCompletedOnboarding = 
-        profile.consent === true || 
-        profile.domain_analysis || 
-        profile.major || 
-        profile.level ||
-        (profile.behavioral_analytics && Object.keys(profile.behavioral_analytics).length > 0);
-      
-      return hasCompletedOnboarding ? '/chat' : '/onboarding';
-    }
-    // If profile is not ready yet, avoid forcing users back to onboarding.
-    if (currentStep > 1) return '/chat';
     return '/chat';
   };
 
@@ -60,9 +41,6 @@ function AppRoutes() {
         <Route path="/about" element={<div className="container"><About /></div>} />
 
         {/* Full-viewport routes (no .container padding) */}
-        <Route path="/onboarding" element={
-          <ProtectedRoute><div className="container"><Onboarding /></div></ProtectedRoute>
-        } />
         <Route path="/chat" element={
           <ProtectedRoute><Chat /></ProtectedRoute>
         } />

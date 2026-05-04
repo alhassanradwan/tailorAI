@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import useAuth from '../hooks/useAuth';
 import api from '../api/axios';
 import Sidebar from '../components/Sidebar';
+import QuizModal from '../components/QuizModal';
 import { formatTimestamp, ChatHistory } from '../utils/helpers';
 
 const SUGGESTIONS = {
@@ -94,13 +95,18 @@ export default function Chat() {
   const [isListening, setIsListening] = useState(false);
   const [attachedFile, setAttachedFile] = useState(null);
 
+  const [showQuizModal, setShowQuizModal] = useState(false);
+  const [quizTriggerReason, setQuizTriggerReason] = useState('direct_request');
+  const [quizUserMessage, setQuizUserMessage] = useState('');
+
   // ✅ One state controls sidebar + overlay + chat layout
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
-  const speechRecognitionRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
 
   const userKey = useMemo(() => (user?.id || user?.email || 'guest'), [user?.id, user?.email]);
 
@@ -319,6 +325,14 @@ export default function Chat() {
 
         if (data.mode) setActiveMode(data.mode);
         if (data.reason) setModeReason(data.reason);
+        
+        // Handle incoming quiz trigger metadata
+        if (data.quiz_recommended) {
+            setQuizTriggerReason(data.quiz_trigger_reason || 'direct_request');
+            setQuizUserMessage(data.quiz_user_message || userMsg);
+            setShowQuizModal(true);
+        }
+
         if (data.analysis?.complexity) {
           const nextSkill = String(data.analysis.complexity);
           setAnalysisComplexity(nextSkill);
@@ -361,6 +375,32 @@ export default function Chat() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage(input);
+    }
+  };
+
+  const handleQuizComplete = (quizData, userAnswers) => {
+    if (!quizData || !quizData.score) {
+        setShowQuizModal(false);
+        return;
+    }
+
+    setShowQuizModal(false);
+
+    const wrongQuestions = quizData.questions.filter(q => userAnswers[q.question_id] !== q.correct_answer);
+    
+    if (wrongQuestions.length > 0) {
+        let prompt = `I just completed a knowledge check on ${quizData.topic} and scored ${quizData.score.percentage}%. I got the following questions wrong:\n\n`;
+        wrongQuestions.forEach((q, idx) => {
+          prompt += `${idx + 1}. ${q.question}\n`;
+          (q.options || []).forEach(opt => { prompt += `   ${opt}\n`; });
+          prompt += `- My Answer: ${userAnswers[q.question_id]}\n- Correct Answer: ${q.correct_answer}\n\n`;
+        });
+        prompt += `Could you please explain these concepts to me? Also, if possible, you may recommend answering some more practice questions on this topic to test my understanding again.`;
+        
+        setTimeout(() => sendMessage(prompt), 300);
+    } else {
+        let prompt = `I just completed a knowledge check on ${quizData.topic} and scored 100%! I got all questions correct. I'm ready to move on to the next topic, or you can test me more deeply on this one later.`;
+        setTimeout(() => sendMessage(prompt), 300);
     }
   };
 
@@ -506,8 +546,8 @@ export default function Chat() {
 
   useEffect(() => {
     return () => {
-      if (speechRecognitionRef.current) {
-        speechRecognitionRef.current.stop();
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
       }
     };
   }, []);
@@ -571,49 +611,65 @@ export default function Chat() {
     }
   };
 
-  const handleVoiceInput = () => {
-    const SpeechRecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-    if (!SpeechRecognitionClass) {
-      pushLocalAgentMessage(t('chat.voiceNotSupported'));
+  const handleVoiceInput = async () => {
+    if (isListening) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
       return;
     }
 
-    if (!speechRecognitionRef.current) {
-      const recognition = new SpeechRecognitionClass();
-      recognition.continuous = false;
-      recognition.interimResults = false;
-      recognition.maxAlternatives = 1;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
 
-      recognition.onstart = () => {
+      mediaRecorder.onstart = () => {
         setIsListening(true);
       };
 
-      recognition.onend = () => {
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
         setIsListening(false);
+        stream.getTracks().forEach((track) => track.stop());
+
+        const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType || 'audio/webm' });
+        audioChunksRef.current = [];
+
+        if (audioBlob.size === 0) return;
+
+        const lang = i18n.language?.startsWith('ar') ? 'ar' : 'en';
+        const formData = new FormData();
+        formData.append('file', audioBlob, `voice_memo_${Date.now()}.webm`);
+        formData.append('language', lang);
+
+        try {
+          const response = await api.post('/stt/transcribe', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
+
+          if (response.data?.success && response.data?.text) {
+            sendMessage(response.data.text);
+          } else {
+            pushLocalAgentMessage(response.data?.error || t('chat.voiceError'));
+          }
+        } catch (error) {
+          console.error('[STT] Upload failed:', error);
+          pushLocalAgentMessage(t('chat.voiceError'));
+        }
       };
 
-      recognition.onerror = () => {
-        setIsListening(false);
-        pushLocalAgentMessage(t('chat.voiceError'));
-      };
-
-      recognition.onresult = (evt) => {
-        const transcript = evt?.results?.[0]?.[0]?.transcript?.trim();
-        if (!transcript) return;
-        sendMessage(transcript);
-      };
-
-      speechRecognitionRef.current = recognition;
+      mediaRecorder.start();
+    } catch (error) {
+      console.error('Microphone access denied or error:', error);
+      pushLocalAgentMessage(t('chat.voiceNotSupported'));
     }
-
-    if (isListening) {
-      speechRecognitionRef.current.stop();
-      return;
-    }
-
-    speechRecognitionRef.current.lang = i18n.language?.startsWith('ar') ? 'ar-SA' : 'en-US';
-    speechRecognitionRef.current.start();
   };
 
   return (
@@ -785,6 +841,30 @@ export default function Chat() {
                 <polygon points="22 2 15 22 11 13 2 9 22 2" />
               </svg>
             </button>
+
+            {isListening && (
+              <div className="voice-overlay" onClick={handleVoiceInput}>
+                <div className="voice-overlay-content">
+                  <div className="voice-mic-icon">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                      <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                    </svg>
+                  </div>
+                  <div className="voice-wave-container">
+                      <div className="wave-bar"></div>
+                      <div className="wave-bar"></div>
+                      <div className="wave-bar"></div>
+                      <div className="wave-bar"></div>
+                      <div className="wave-bar"></div>
+                      <div className="wave-bar"></div>
+                      <div className="wave-bar"></div>
+                      <div className="wave-bar"></div>
+                      <div className="wave-bar"></div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {attachedFile && (
@@ -803,6 +883,15 @@ export default function Chat() {
           )}
         </form>
       </div>
+
+      {showQuizModal && (
+        <QuizModal
+          userMessage={quizUserMessage || userMsg}
+          triggerReason={quizTriggerReason}
+          onClose={() => setShowQuizModal(false)}
+          onComplete={handleQuizComplete}
+        />
+      )}
     </div>
   );
 }
