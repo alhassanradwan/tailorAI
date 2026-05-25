@@ -12,6 +12,7 @@ export default function Analytics() {
   const [summary, setSummary] = useState(null);
   const [mastery, setMastery] = useState([]);
   const [miscItems, setMiscItems] = useState([]);
+  const [recommendations, setRecommendations] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Fetch all analytics data from backend on mount
@@ -21,15 +22,17 @@ export default function Analytics() {
 
     (async () => {
       try {
-        const [sumRes, mastRes, miscRes] = await Promise.all([
+        const [sumRes, mastRes, miscRes, recRes] = await Promise.all([
           api.get('/analytics/summary'),
           api.get('/analytics/mastery-map'),
           api.get('/analytics/misconceptions'),
+          api.get('/analytics/recommendations'),
         ]);
         if (cancelled) return;
         if (sumRes.data.success) setSummary(sumRes.data.summary);
         if (mastRes.data.success) setMastery(mastRes.data.mastery || []);
         if (miscRes.data.success) setMiscItems(miscRes.data.misconceptions || []);
+        if (recRes.data.success) setRecommendations(recRes.data.recommendations || []);
       } catch (err) {
         console.error('Failed to load analytics:', err);
       } finally {
@@ -39,6 +42,11 @@ export default function Analytics() {
 
     return () => { cancelled = true; };
   }, [user]);
+
+  const handleRecommendationClick = (topic) => {
+    const formattedTopic = topic.replace(/_/g, ' ');
+    navigate(`/chat?suggest=${encodeURIComponent(formattedTopic)}`);
+  };
 
   if (loading) {
     return (
@@ -172,6 +180,43 @@ export default function Analytics() {
                 : <span className="analytics-empty">{t('analytics.noTopicsInProgress')}</span>}
             </div>
           </div>
+        </div>
+
+        {/* Recommended Topics */}
+        <div className="analytics-section glass-effect recommendations-section">
+          <div className="recommendations-header">
+            <h3>
+              <span className="recommendations-icon">✨</span>
+              {t('analytics.recommendations.title')}
+            </h3>
+            <p className="recommendations-subtitle">{t('analytics.recommendations.subtitle')}</p>
+          </div>
+          {recommendations.length > 0 ? (
+            <div className="recommendations-grid">
+              {recommendations.map((rec) => (
+                <button
+                  key={rec.topic}
+                  className="recommendation-card"
+                  onClick={() => handleRecommendationClick(rec.topic)}
+                  type="button"
+                  title={t('analytics.recommendations.chipAction')}
+                >
+                  <div className="recommendation-card-inner">
+                    <span className="recommendation-emoji">🔮</span>
+                    <div className="recommendation-text">
+                      <span className="recommendation-topic">{rec.topic.replace(/_/g, ' ')}</span>
+                      <span className="recommendation-reason">{rec.reason}</span>
+                    </div>
+                    <span className="recommendation-action">
+                      {t('analytics.recommendations.chipAction')} →
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <span className="analytics-empty">{t('analytics.recommendations.empty')}</span>
+          )}
         </div>
 
         {/* Misconceptions */}
