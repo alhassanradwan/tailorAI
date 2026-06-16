@@ -139,6 +139,7 @@ def chat_groq():
             profile.get('force_tutoring_mode')
             or profile.get('adaptive_preference')
             or (profile.get('conversation_preferences', {}) or {}).get('adaptive_preference')
+            or profile.get('tutoring_mode')
             or ''
         )
         req_mode_pref = req_mode_pref.strip().lower()
@@ -150,6 +151,8 @@ def chat_groq():
         req_tone_pref = (
             profile.get('force_tone')
             or (profile.get('conversation_preferences', {}) or {}).get('preferred_tone')
+            or profile.get('tone')
+            or profile.get('learning_tone')
             or ''
         )
         req_tone_pref = req_tone_pref.strip().lower()

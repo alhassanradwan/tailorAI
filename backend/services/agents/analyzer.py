@@ -236,8 +236,11 @@ def build_recommendations(topics: list, complexity: str, qtype: str, ks: dict, m
                     )
                 break
 
-    # comprehension check
-    for t, td in topics_map.items():
+    # comprehension check - only for topics relevant to the current message
+    for t in topics:
+        if t.lower() in ['general', 'unknown']:
+            continue
+        td = topics_map.get(t, {})
         if isinstance(td, dict) and td.get('count', 0) >= 5 and not td.get('verified'):
             recs['comprehension_check_topic'] = t
             break

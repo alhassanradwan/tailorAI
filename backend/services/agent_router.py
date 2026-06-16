@@ -169,6 +169,7 @@ class DeepAgentRouter:
         recs = finalize_tutoring_mode(recs, knowledge_state, topics, meta)
 
         return {
+            'message':          message,
             'topics':           topics,
             'complexity':       complexity,
             'question_type':    qtype,

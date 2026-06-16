@@ -237,6 +237,10 @@ def should_trigger_comprehension_check(profile):
     
     # Find topics discussed 5+ times without verification
     for topic, data in topics.items():
+        # Skip generic fallback topics for comprehension checks
+        if topic.lower() in ['general', 'unknown']:
+            continue
+            
         if isinstance(data, dict):
             count = data.get('count', 0)
             verified = data.get('verified', False)
@@ -658,8 +662,8 @@ Conversations: {profile.get('conversation_count', 0)}""")
     if recommendations.get('trigger_socratic_mode'):
         adapt_instructions.append(
             "🔄 SOCRATIC MODE: Student shows confusion/misconception. "
-            "Ask probing questions BEFORE explaining. "
-            "Example: 'What do you think happens when...?' or 'Can you tell me your understanding of...?'"
+            "First explain the concept clearly, THEN ask probing questions. "
+            "Example: '...does that make sense? What do you think happens when...?'"
         )
     
     if recommendations.get('emotional_state') == 'frustrated':
@@ -706,7 +710,8 @@ Conversations: {profile.get('conversation_count', 0)}""")
     if check_topic:
         prompt_sections.append(
             f"\n💡 COMPREHENSION CHECK: After answering, ask a quick check question about '{check_topic}' "
-            f"to verify understanding. Example: 'Quick check: Can you explain {check_topic} in your own words?'"
+            f"to verify understanding. Example: 'Quick check: Can you explain {check_topic} in your own words?' "
+            f"(NOTE: If the user explicitly asks NOT to be asked questions, skip this check.)"
         )
     
     enriched_prompt = '\n'.join(prompt_sections)

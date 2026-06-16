@@ -85,22 +85,40 @@ def build_system_prompt(
     else:
         effective_level = profile.get('skill_level', profile.get('python', 'Intermediate'))
 
+    # filter historical topics to ONLY those relevant to the current message topics
+    # to avoid contaminating the current chat with unrelated historical topics
+    curr_topics = analysis.get('topics', []) if isinstance(analysis, dict) else []
+
+    # filter strong/weak topics based on curr_topics
+    if curr_topics:
+        strong = [t for t in strong if any(c.lower() in t.lower() or t.lower() in c.lower() for c in curr_topics)]
+        weak   = [t for t in weak if any(c.lower() in t.lower() or t.lower() in c.lower() for c in curr_topics)]
+    else:
+        strong = []
+        weak = []
+
     # ── mastery lines ────────────────────────────────────────
     mastery_lines = []
-    for topic, td in topics_map.items():
-        if isinstance(td, dict) and td.get('count', 0) >= 2:
-            m = td.get('mastery_level', 0)
-            mastery_lines.append(
-                f"  - {topic}: {m:.0%} mastery ({td['count']} interactions)"
-            )
+    if curr_topics:
+        for topic, td in topics_map.items():
+            if isinstance(td, dict) and td.get('count', 0) >= 2:
+                # Only include if it's broadly related to the current chat
+                if any(curr_t.lower() in topic.lower() or topic.lower() in curr_t.lower() for curr_t in curr_topics):
+                    m = td.get('mastery_level', 0)
+                    mastery_lines.append(
+                        f"  - {topic}: {m:.0%} mastery ({td['count']} interactions)"
+                    )
 
     # ── misconception lines ──────────────────────────────────
     misconception_lines = []
-    for topic, md in misconceptions.items():
-        if isinstance(md, dict) and not md.get('corrected'):
-            misconception_lines.append(
-                f"  - {topic}: {md.get('detail', 'unclear understanding')}"
-            )
+    if curr_topics:
+        for topic, md in misconceptions.items():
+            if isinstance(md, dict) and not md.get('corrected'):
+                # Same for misconceptions
+                if any(curr_t.lower() in topic.lower() or topic.lower() in curr_t.lower() for curr_t in curr_topics):
+                    misconception_lines.append(
+                        f"  - {topic}: {md.get('detail', 'unclear understanding')}"
+                    )
 
     # ── style preferences ────────────────────────────────────
     style_notes = []
@@ -137,6 +155,16 @@ def build_system_prompt(
     elif not length_inst and pl == 'detailed':
         length_inst = 'CRITICAL: Provide DETAILED responses. Go deep, cover edge cases.'
 
+    # --- Live message overrides for length ---
+    # Give priority if the user explicitly asks for detail or brevity in the recent chat history
+    # We will just parse the last message if passed via analysis, else we just use pl.
+    current_message = (analysis.get('message') or '') if isinstance(analysis, dict) else ''
+    msg_lower = current_message.lower()
+    if any(k in msg_lower for k in ['in detail', 'detailed', 'in depth', 'elaborate', 'comprehensively']):
+        length_inst = 'CRITICAL: The user explicitly requested a DETAILED answer. You MUST provide a comprehensive, deeply thorough, and rich explanation. Do not shorten it.'
+    elif any(k in msg_lower for k in ['short', 'brief', 'concise', 'summarize', 'in a few words', 'quick']):
+        length_inst = 'CRITICAL: The user explicitly requested a SHORT answer. Keep responses to 2-4 sentences MAX. Be brief and direct.'
+
     # ── adaptation directives ────────────────────────────────
     active_mode = (
         forced_mode
@@ -163,7 +191,10 @@ def build_system_prompt(
 
     chk = adaptations.get('comprehension_check')
     if chk and AdaptiveModeService.is_socratic(active_mode):
-        adapt.append(f"After answering, ask: 'Can you explain {chk} in your own words?'")
+        adapt.append(
+            f"After answering, ask: 'Can you explain {chk} in your own words?' "
+            f"(NOTE: If the user explicitly asks NOT to be asked questions, skip this check.)"
+        )
 
     learning_tone      = profile.get('learning_tone', profile.get('tone', 'Friendly')).lower()
     conversation_count = profile.get('conversation_count', 0)

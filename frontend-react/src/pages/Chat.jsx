@@ -396,7 +396,7 @@ export default function Chat() {
           (q.options || []).forEach(opt => { prompt += `   ${opt}\n`; });
           prompt += `- My Answer: ${userAnswers[q.question_id]}\n- Correct Answer: ${q.correct_answer}\n\n`;
         });
-        prompt += `Could you please explain these concepts to me? Also, if possible, you may recommend answering some more practice questions on this topic to test my understanding again.`;
+        prompt += `Could you please explain these concepts to me?`;
         
         setTimeout(() => sendMessage(prompt), 300);
     } else {
