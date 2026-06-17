@@ -208,4 +208,4 @@ __marimo__/
 
 backend/.gitignore
 backend/.env
-
+backend/.env.example
