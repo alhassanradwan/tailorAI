@@ -889,9 +889,60 @@ input:-webkit-autofill:active {
   margin-bottom: 0.5rem;
 }
 
-/* Form */
-.form-group {
-  margin-bottom: 1.25rem;
+/* Deep Research Toggle Button */
+.chat-divider {
+  width: 1px;
+  height: 24px;
+  background-color: #444444; /* matching the 1px dark border requirement */
+  margin: 0 4px;
+  opacity: 0.5;
+}
+
+.deep-research-toggle {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: transparent !important;
+  border: 1px solid #444444;
+  border-radius: 16px; /* Pill shape */
+  padding: 0 10px;
+  height: 32px;
+  color: #b0a8f0; /* Muted purple-gray */
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.deep-research-toggle svg.telescope-icon {
+  width: 14px;
+  height: 14px;
+  stroke: #b0a8f0;
+  transition: stroke 0.2s ease-in-out;
+}
+
+.deep-research-toggle:hover {
+  border-color: #666666;
+}
+
+.deep-research-toggle.active {
+  border-color: #7F77DD;
+  background-color: #1e1b3a !important; /* Dark purple tint */
+  color: #AFA9EC; /* Lighter purple */
+}
+
+.deep-research-toggle.active svg.telescope-icon {
+  stroke: #AFA9EC;
+}
+
+/* Ensure the composer handles the new button smoothly */
+.chat-composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
 }
 
 .form-group label {

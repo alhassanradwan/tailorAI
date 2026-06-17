@@ -94,6 +94,7 @@ export default function Chat() {
   const [modeChoice, setModeChoice] = useState('auto');
   const [isListening, setIsListening] = useState(false);
   const [attachedFile, setAttachedFile] = useState(null);
+  const [isDeepResearchMode, setIsDeepResearchMode] = useState(false);
 
   const [showQuizModal, setShowQuizModal] = useState(false);
   const [quizTriggerReason, setQuizTriggerReason] = useState('direct_request');
@@ -305,16 +306,35 @@ export default function Chat() {
         },
       };
 
-      const { data } = await api.post('/chat/groq', {
+      const endpoint = isDeepResearchMode ? '/research/deep-research' : '/chat/groq';
+      const payload = isDeepResearchMode ? {
+        user_id: user?.id,
+        message: userMsg,
+        topic: userMsg,
+        depth: 'medium',
+        max_sources: 10
+      } : {
         user_id: user?.id,
         message: userMsg,
         profile: profilePayload,
         chat_history: chatHistory,
-      });
+      };
+
+      const { data } = await api.post(endpoint, payload);
 
       setIsTyping(false);
 
-      if (data.success && data.response) {
+      if (data.success && data.report) {
+         const aiMsg = {
+           role: 'agent',
+           content: data.report,
+           blocks: [],
+           messageType: 'legacy_text',
+           timestamp: Date.now(),
+         };
+         setChatMessages((prev) => [...prev, aiMsg]);
+         ChatHistory.addMessage(userKey, session.id, { text: data.report, sender: 'agent', timestamp: new Date().toISOString() });
+      } else if (data.success && data.response) {
         const aiMsg = {
           role: 'agent',
           content: data.response,
@@ -818,6 +838,24 @@ export default function Chat() {
                 <line x1="5" y1="12" x2="19" y2="12" />
               </svg>
             </button>
+
+            <div className="chat-divider"></div>
+
+            <button
+              type="button"
+              className={`deep-research-toggle ${isDeepResearchMode ? 'active' : ''}`}
+              onClick={() => setIsDeepResearchMode(!isDeepResearchMode)}
+              aria-label="Toggle Deep Research"
+              aria-pressed={isDeepResearchMode}
+            >
+              <svg className="telescope-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22.9 22.9l-5.6-5.6"></path>
+                <path d="M12.2 12.2a4 4 0 105.7 5.7L22.9 22.9l-4.9-5-1-1a4 4 0 00-4.8 0L9.8 14.5a2 2 0 01-1.3.5 2 2 0 01-1.4-.6L1.1 8.4A2 2 0 011 5.6 2 2 0 013.8 5L9.8 11a4 4 0 002.4 1.2M13.2 2a9.9 9.9 0 003.5.7 9 9 0 005.1-1.5M10.8 19.3L15 23M3 13.8L5.5 16.5M1.3 10L6.8 15M7 6l4-4"></path>
+              </svg>
+              <span>Deep research</span>
+            </button>
+
+            <div className="chat-divider"></div>
 
             <textarea
               ref={inputRef}
