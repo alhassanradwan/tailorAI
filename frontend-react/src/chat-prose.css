@@ -1,0 +1,182 @@
+/* ─── Prose message styles ───────────────────────────────────────────────────
+   Add these to your main CSS file (e.g. Chat.css or index.css).
+   They scope all ReactMarkdown output inside .prose-message.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+.prose-message {
+  font-size: 15px;
+  line-height: 1.75;
+  color: inherit;
+  word-break: break-word;
+}
+
+/* Paragraphs */
+.prose-message p {
+  margin: 0 0 0.75rem;
+}
+.prose-message p:last-child {
+  margin-bottom: 0;
+}
+
+/* Headings */
+.prose-message h1,
+.prose-message h2,
+.prose-message h3,
+.prose-message h4 {
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 1.25rem 0 0.5rem;
+  color: inherit;
+}
+.prose-message h1 { font-size: 1.25rem; }
+.prose-message h2 { font-size: 1.1rem;  border-bottom: 1px solid rgba(255,255,255,0.12); padding-bottom: 4px; }
+.prose-message h3 { font-size: 1rem; }
+.prose-message h4 { font-size: 0.9rem; }
+
+.prose-message h1:first-child,
+.prose-message h2:first-child,
+.prose-message h3:first-child {
+  margin-top: 0;
+}
+
+/* Lists */
+.prose-message ul,
+.prose-message ol {
+  padding-left: 1.4rem;
+  margin: 0 0 0.75rem;
+}
+.prose-message li {
+  margin-bottom: 0.3rem;
+}
+.prose-message li:last-child {
+  margin-bottom: 0;
+}
+.prose-message ul { list-style-type: disc; }
+.prose-message ol { list-style-type: decimal; }
+
+/* Inline code */
+.prose-message .inline-code,
+.prose-message code:not(pre code) {
+  font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 0.85em;
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/* Code block wrapper */
+.code-block-wrapper {
+  margin: 0.85rem 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 14px;
+  background: rgba(0, 0, 0, 0.25);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+.code-block-lang {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+  font-family: 'Fira Code', monospace;
+}
+
+.code-copy-btn {
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.45);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  letter-spacing: 0.02em;
+}
+.code-copy-btn:hover {
+  color: rgba(255, 255, 255, 0.85);
+  border-color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.07);
+}
+.code-copy-btn.copied {
+  color: #5cd8a0;
+  border-color: rgba(92, 216, 160, 0.4);
+}
+
+.code-block-pre {
+  margin: 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: #e2e8f0;
+  background: transparent;
+}
+.code-block-pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  border-radius: 0;
+}
+
+/* Blockquotes */
+.prose-message blockquote {
+  border-left: 3px solid rgba(255, 255, 255, 0.2);
+  margin: 0.75rem 0;
+  padding: 4px 0 4px 12px;
+  color: rgba(255, 255, 255, 0.6);
+  font-style: italic;
+}
+
+/* Tables (remarkGfm) */
+.prose-message table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  margin: 0.75rem 0;
+}
+.prose-message th,
+.prose-message td {
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  text-align: left;
+}
+.prose-message th {
+  background: rgba(255, 255, 255, 0.07);
+  font-weight: 600;
+}
+.prose-message tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* Horizontal rule */
+.prose-message hr {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  margin: 1rem 0;
+}
+
+/* Strong / em */
+.prose-message strong { font-weight: 600; }
+.prose-message em     { font-style: italic; }
+
+/* Links */
+.prose-message a {
+  color: #818cf8;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.prose-message a:hover { color: #a5b4fc; }

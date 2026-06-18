@@ -1,4 +1,3 @@
-
 //##################3##############################################################################3
 
 
@@ -9,6 +8,9 @@ import api from '../api/axios';
 import Sidebar from '../components/Sidebar';
 import QuizModal from '../components/QuizModal';
 import { formatTimestamp, ChatHistory } from '../utils/helpers';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import "../chat-prose.css";
 
 const SUGGESTIONS = {
   'Data Science': ['What is data cleaning?', 'Explain correlation vs causation', 'How do I handle missing values?'],
@@ -955,7 +957,7 @@ export default function Chat() {
 
       {showQuizModal && (
         <QuizModal
-          userMessage={quizUserMessage || userMsg}
+          userMessage={quizUserMessage || ''}
           triggerReason={quizTriggerReason}
           onClose={() => setShowQuizModal(false)}
           onComplete={handleQuizComplete}
@@ -1015,152 +1017,106 @@ function MessageBubble({ message, userKey }) {
   );
 }
 
+// ─── Message content renderer ────────────────────────────────────────────────
+// Always renders via ReactMarkdown so headings, code blocks, tables, bold, etc.
+// are correctly styled. Structured blocks (if present) are serialised back to
+// markdown so they go through the same single rendering path.
+
+import { useState as _useState } from 'react';
+
 function DynamicMessageContent({ message }) {
   const blocks = Array.isArray(message?.blocks) ? message.blocks : [];
-  if (!blocks.length) {
-    return message?.content || '';
-  }
+
+  // Prefer structured blocks when present: serialise them to markdown
+  const markdown = blocks.length
+    ? blocksToMarkdown(blocks)
+    : (message?.content || '');
 
   return (
-    <div className="dynamic-message-blocks">
-      {blocks.map((block, idx) => (
-        <div key={`${block?.type || 'text'}-${idx}`} className="dynamic-block-wrap">
-          {idx > 0 ? <div className="dynamic-block-separator" aria-hidden="true" /> : null}
-          <DynamicBlock block={block} />
-        </div>
-      ))}
+    <div className="prose-message">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={markdownComponents}
+      >
+        {markdown}
+      </ReactMarkdown>
     </div>
   );
 }
 
-function DynamicBlock({ block }) {
-  const type = (block?.type || 'text').toLowerCase();
-  const title = cleanMarkdownLine(block?.title || '');
-  const text = block?.text || '';
-  const items = Array.isArray(block?.items) ? block.items : [];
-  const rows = Array.isArray(block?.rows) ? block.rows : [];
+// Converts the legacy block schema back to clean markdown so we have one render path
+function blocksToMarkdown(blocks) {
+  return blocks
+    .map((block) => {
+      const type = (block?.type || 'text').toLowerCase();
+      const title = (block?.title || '').trim();
+      const text = (block?.text || '').trim();
+      const items = Array.isArray(block?.items) ? block.items : [];
+      const rows = Array.isArray(block?.rows) ? block.rows : [];
 
-  if (type === 'code') {
-    return (
-      <div className="dynamic-block dynamic-block-code">
-        {title ? <strong>{title}</strong> : null}
-        <pre><code>{text}</code></pre>
-      </div>
-    );
-  }
+      const heading = title ? `### ${title}\n\n` : '';
 
-  if (type === 'steps' || type === 'quiz') {
-    const lines = items.length
-      ? items
-      : text.split('\n').map((line) => line.trim()).filter(Boolean);
-    return (
-      <div className="dynamic-block dynamic-block-list">
-        {title ? <strong>{title}</strong> : null}
-        <ul>
-          {lines.map((line, idx) => (
-            <li key={`${type}-line-${idx}`}><RichTextLine text={cleanMarkdownLine(line.replace(/^[-*]\s*/, ''))} /></li>
-          ))}
-        </ul>
-      </div>
-    );
-  }
+      if (type === 'code') {
+        const lang = (block?.language || '').trim();
+        return `${heading}\`\`\`${lang}\n${text}\n\`\`\``;
+      }
 
-  const parsedTable = rows.length ? { headers: Object.keys(rows[0] || {}), dataRows: rows } : parseMarkdownTable(text);
-  if (type === 'comparison_table' && parsedTable.dataRows.length) {
-    const headers = parsedTable.headers;
-    return (
-      <div className="dynamic-block dynamic-block-table">
-        {title ? <strong>{title}</strong> : null}
-        <table>
-          <thead>
-            <tr>
-              {headers.map((h) => <th key={h}><RichTextLine text={cleanMarkdownLine(h)} /></th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {parsedTable.dataRows.map((row, ridx) => (
-              <tr key={`row-${ridx}`}>
-                {headers.map((h) => (
-                  <td key={`${ridx}-${h}`}>
-                    <RichTextLine text={cleanMarkdownLine(String(row[h] || ''))} />
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  }
+      if (type === 'steps' || type === 'quiz') {
+        const lines = items.length
+          ? items
+          : text.split('\n').map((l) => l.trim()).filter(Boolean);
+        const list = lines.map((l) => `- ${l.replace(/^[-*]\s*/, '')}`).join('\n');
+        return `${heading}${list}`;
+      }
 
-  return (
-    <div className="dynamic-block dynamic-block-text">
-      {title ? <strong>{title}</strong> : null}
-      <div className="dynamic-text-lines">
-        {text
-          .split('\n')
-          .map((line) => line.trim())
-          .filter(Boolean)
-          .map((line, idx) => (
-            <div key={`txt-${idx}`}>
-              <RichTextLine text={cleanMarkdownLine(line)} />
-            </div>
-          ))}
-      </div>
-    </div>
-  );
-}
-
-function cleanMarkdownLine(raw) {
-  return (raw || '')
-    .replace(/^#{1,6}\s*/, '')
-    .replace(/`/g, '')
-    .trim();
-}
-
-function RichTextLine({ text }) {
-  const parts = String(text || '').split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
-  if (!parts.length) return null;
-  return (
-    <>
-      {parts.map((part, idx) => {
-        const isBold = /^\*\*[^*]+\*\*$/.test(part);
-        if (isBold) {
-          return <strong key={`b-${idx}`}>{part.slice(2, -2)}</strong>;
+      if (type === 'comparison_table') {
+        if (rows.length) {
+          const headers = Object.keys(rows[0] || {});
+          const sep = headers.map(() => '---').join(' | ');
+          const head = headers.join(' | ');
+          const body = rows.map((r) => headers.map((h) => r[h] ?? '').join(' | ')).join('\n');
+          return `${heading}| ${head} |\n| ${sep} |\n${body.split('\n').map((r) => `| ${r} |`).join('\n')}`;
         }
-        return <span key={`t-${idx}`}>{part}</span>;
-      })}
-    </>
+        // Already markdown table in text field
+        return `${heading}${text}`;
+      }
+
+      return `${heading}${text}`;
+    })
+    .join('\n\n');
+}
+
+// Custom renderers: code blocks get a header bar + copy button; everything else
+// uses the default ReactMarkdown output (which we style via CSS).
+function CodeBlock({ node, inline, className, children, ...props }) {
+  const [copied, setCopied] = _useState(false);
+  const lang = (className || '').replace('language-', '') || 'code';
+  const code = String(children).replace(/\n$/, '');
+
+  if (inline) {
+    return <code className="inline-code" {...props}>{children}</code>;
+  }
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <div className="code-block-wrapper">
+      <div className="code-block-header">
+        <span className="code-block-lang">{lang}</span>
+        <button className={`code-copy-btn${copied ? ' copied' : ''}`} onClick={handleCopy} type="button">
+          {copied ? '✓ copied' : 'copy'}
+        </button>
+      </div>
+      <pre className="code-block-pre"><code className={className} {...props}>{children}</code></pre>
+    </div>
   );
 }
 
-function parseMarkdownTable(text) {
-  const lines = String(text || '')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.includes('|'));
-
-  if (lines.length < 2) return { headers: [], dataRows: [] };
-
-  const rawRows = lines
-    .map((line) => line.replace(/^\||\|$/g, '').split('|').map((cell) => cell.trim()))
-    .filter((cells) => cells.length >= 2);
-
-  if (rawRows.length < 2) return { headers: [], dataRows: [] };
-
-  const isSeparator = (cells) => cells.every((cell) => /^:?-{3,}:?$/.test(cell));
-  const header = rawRows[0];
-  const bodyRows = rawRows.slice(1).filter((cells) => !isSeparator(cells));
-  if (!bodyRows.length) return { headers: [], dataRows: [] };
-
-  const headers = header.map((h) => cleanMarkdownLine(h));
-  const dataRows = bodyRows.map((cells) => {
-    const row = {};
-    headers.forEach((h, idx) => {
-      row[h] = cleanMarkdownLine(cells[idx] || '');
-    });
-    return row;
-  });
-
-  return { headers, dataRows };
-}
+const markdownComponents = {
+  code: CodeBlock,
+};
