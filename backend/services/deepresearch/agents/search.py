@@ -31,7 +31,7 @@ def perform_search(query: str):
 
     except Exception as e:
         print(f"[Search Error] Query: {query} | Error: {e}")
-        return []  # return empty instead of fake data
+        return []
 
 
 def run_search(state: ResearchState) -> dict:

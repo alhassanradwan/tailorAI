@@ -6,7 +6,6 @@ def run_cite(state: ResearchState) -> dict:
     
     print("[Deep Research] Attaching citations...")
     
-    # Simple citation appending for consistency and safety (can be augmented with LLM later if needed)
     sources_set = set()
     for f in facts:
         if "source_url" in f:
