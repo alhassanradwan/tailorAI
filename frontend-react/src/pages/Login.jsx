@@ -41,7 +41,7 @@ export default function Login() {
     setLoading(true);
     try {
       await signup(signupName, signupEmail, signupPassword);
-      navigate('/onboarding');
+      navigate('/chat');
     } catch (err) {
       setError(err.response?.data?.error || err.message || t('login.errors.signupFailed'));
     } finally {

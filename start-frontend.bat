@@ -1,3 +1,3 @@
 @echo off
-cd /d "C:\Users\Lenovo\Desktop\AdaptiveAI\frontend-react"
+cd /d "D:\projects\tailorAI\frontend-react"
 npm run dev

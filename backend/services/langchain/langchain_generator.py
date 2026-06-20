@@ -4,8 +4,8 @@ import logging
 import re
 
 from config import Config
-from services.langchain_provider import LangChainProvider
-from services.langchain_prompts import (
+from services.langchain.langchain_provider import LangChainProvider
+from services.langchain.langchain_prompts import (
     get_tutor_prompt_template,
     mode_instruction,
     normalize_level,
@@ -14,7 +14,7 @@ from services.langchain_prompts import (
     select_code_style_profile,
     select_output_plan,
 )
-from services.langchain_schemas import DynamicContentBlock, build_text_only_dynamic_envelope
+from services.langchain.langchain_schemas import DynamicContentBlock, build_text_only_dynamic_envelope
 
 logger = logging.getLogger(__name__)
 

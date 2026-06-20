@@ -14,6 +14,8 @@ class LangChainAnalysisCues(BaseModel):
     suggested_approach: str = 'explain_simply'
     mode_suggestion: str | None = None
     confidence: float = 0.5
+    question_type: str = 'general'
+    user_intent: str = 'learning'
 
 
 def default_analysis_cues() -> LangChainAnalysisCues:

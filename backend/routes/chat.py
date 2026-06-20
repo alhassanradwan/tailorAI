@@ -12,13 +12,51 @@ from services.ai_agents import AIService
 from services.agent_router import DeepAgentRouter
 from services.knowledge_state import KnowledgeStateService
 from services.adaptive_mode_service import AdaptiveModeService
+from services.langgraph.langgraph_service import app as langgraph_app
 from database import Database
 from datetime import datetime
 import os
+import json
 from groq import Groq
 
 logger = logging.getLogger(__name__)
 chat_bp = Blueprint('chat', __name__)
+
+def classify_intent_with_llm(client, message: str) -> dict:
+    prompt = f"""
+Classify the user's intent.
+
+Rules:
+- "testing" ONLY if the user directly asks YOU to give a quiz/test.
+- If quiz/exam is mentioned as context → "learning"
+- Focus on the MAIN request, not side context.
+
+Examples:
+Input: "give me a quiz on CNN"
+Output: {{"intent": "testing", "question_type": "quiz"}}
+
+Input: "explain CNN I have a quiz tomorrow"
+Output: {{"intent": "learning", "question_type": "concept"}}
+
+Input: "my teacher will test me"
+Output: {{"intent": "learning", "question_type": "general"}}
+
+Now classify:
+Input: "{message}"
+Output ONLY JSON:
+"""
+    try:
+        res = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0
+        )
+        return json.loads(res.choices[0].message.content)
+    except Exception as e:
+        logger.warning(f"Intent classification failed: {e}")
+        return {"intent": "learning", "question_type": "general"}
+
+
 
 @chat_bp.route('/message', methods=['POST'])
 def send_message():
@@ -101,6 +139,7 @@ def chat_groq():
             profile.get('force_tutoring_mode')
             or profile.get('adaptive_preference')
             or (profile.get('conversation_preferences', {}) or {}).get('adaptive_preference')
+            or profile.get('tutoring_mode')
             or ''
         )
         req_mode_pref = req_mode_pref.strip().lower()
@@ -112,6 +151,8 @@ def chat_groq():
         req_tone_pref = (
             profile.get('force_tone')
             or (profile.get('conversation_preferences', {}) or {}).get('preferred_tone')
+            or profile.get('tone')
+            or profile.get('learning_tone')
             or ''
         )
         req_tone_pref = req_tone_pref.strip().lower()
@@ -144,14 +185,20 @@ def chat_groq():
             except Exception as e:
                 logger.warning("Failed to persist tone/mode preferences: %s", e)
 
-        # 2. Run full pipeline: analyse → route → prompt → Groq
-        result = DeepAgentRouter.generate(
-            message=message,
-            profile=profile,
-            knowledge_state=ks,
-            chat_history=chat_history,
-            user_id=user_id,
-        )
+        graph_result = langgraph_app.invoke({
+            'message':         message,
+            'profile':         profile,
+            'knowledge_state': ks,
+            'chat_history':    chat_history,
+            'agent_outputs':   [],
+            'next_steps':      [],
+            'analysis':        {},
+            'final_response':  {},
+        })
+        result = graph_result.get('final_response', {})
+        
+        agents_involved = result.get('agents_involved', [])
+        result['agent'] = agents_involved[0] if agents_involved else 'general'
 
         if not result.get('success'):
             return jsonify({"success": False, "error": result.get('error', 'Unknown error')}), 500
@@ -172,6 +219,58 @@ def chat_groq():
             )
         recs['tutoring_mode'] = mode
         recs['mode_reason'] = reason
+
+        # Quiz Inference Logic
+        intent = (result.get('generation', {}) or {}).get('intent') or 'general_fallback'
+        
+        quiz_recommended = False
+        quiz_trigger_reason = 'direct_request'
+        
+        # Check explicit testing intent using the specific LLM function
+        msg_lower = message.lower()
+        if 'quiz' in msg_lower or 'test' in msg_lower or 'exam' in msg_lower or 'assess' in msg_lower:
+            client = Groq(api_key=os.getenv('GROQ_API_KEY'))
+            intent_class = classify_intent_with_llm(client, message)
+            is_quiz = intent_class.get('intent') == 'testing'
+        else:
+            is_quiz = result.get('user_intent') == 'testing' or 'quiz_generator' in result.get('nodes_involved', [])
+        
+        # 1. Direct Request
+        if is_quiz:
+            quiz_recommended = True
+            quiz_trigger_reason = 'direct_request'
+        else:
+            # 2. Topic Shift (Only recommend quiz if mastery is very low)
+            current_topics = analysis.get('topics', [])
+            past_topics = ks.get('recent_topics', [])
+            if current_topics and past_topics and current_topics[0] not in past_topics:
+                mastery = ks.get('topics', {}).get(current_topics[0], {}).get('mastery_level', 0.5)
+                # Ensure topic shifts don't randomly give a quiz unless the user really struggles
+                if mastery < 0.2:
+                    quiz_recommended = True
+                    quiz_trigger_reason = 'weak_performance'
+            # 4. Repetitive Asking
+            elif analysis.get('message_analysis', {}).get('uncertainty_markers', 0) > 3:
+                quiz_recommended = True
+                quiz_trigger_reason = 'repetitive_asking'
+
+        # Pick up any pending post-quiz explanation context stored by submit_quiz()
+        # and inject it so the agent can explain wrong answers this turn.
+        pending_quiz_context = ""
+        try:
+            qcc = Database.get_collection("quiz_chat_context").find_one(
+                {"user_id": user_id}, {"_id": 0}
+            )
+            if qcc:
+                pending_quiz_context = qcc.get("context", "")
+                # Delete it so it's only injected once
+                Database.get_collection("quiz_chat_context").delete_one({"user_id": user_id})
+        except Exception as _qcc_err:
+            logger.warning("Failed to load quiz_chat_context: %s", _qcc_err)
+
+        # Override LLM text if quiz to avoid leaking quiz text in chat
+        if quiz_recommended:
+            result['response'] = "I've prepared a tailored Knowledge Check for you! Opening the quiz now..."
 
         # 3. Update knowledge state from analysis (server-side analytics)
         try:
@@ -245,15 +344,37 @@ def chat_groq():
             },
         }
 
+        # Intercept LLM's raw text if it's a quiz to ensure it NEVER leaks chat questions
+        final_response = result.get('response', '')
+        if quiz_recommended:
+            final_response = "I've prepared a tailored Knowledge Check for you! Opening the quiz now..."
+            if dynamic_response and 'content_blocks' in dynamic_response:
+                dynamic_response['content_blocks'] = [{
+                    'type': 'text',
+                    'title': None,
+                    'text': final_response,
+                    'language': None,
+                    'rows': [],
+                    'items': [],
+                }]
+
         return jsonify({
             "success": True,
-            "response": result['response'],
+            "response": final_response,
+            # When quiz_recommended=True the frontend should call POST /api/quiz/generate
+            # with {"message": message, "trigger_reason": quiz_trigger_reason}
+            # — passing the raw message so topic + count are extracted correctly.
+            "quiz_user_message": message if quiz_recommended else None,
+            # Injected into the next chat turn's system context after quiz submission
+            "pending_quiz_context": pending_quiz_context or None,
             "model": "llama-3.3-70b-versatile",
             "agent": result['agent'],
             "agent_name": result.get('agent_name', ''),
             "tokens_used": result.get('tokens_used', 0),
             "mode": mode,
             "reason": reason,
+            "quiz_recommended": quiz_recommended,
+            "quiz_trigger_reason": quiz_trigger_reason,
             "analysis": {
                 "topics": analysis.get('topics', []),
                 "complexity": analysis.get('complexity'),

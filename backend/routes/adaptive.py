@@ -197,15 +197,19 @@ Current student profile:
 
 Return ONLY valid JSON (no markdown):
 {{
-  "topics": ["topic1", "topic2"],
+  "topics": ["topic1"],
   "complexity": "beginner|intermediate|advanced",
-  "question_type": "definition|how_to|why|comparison|debugging|code_request|general",
+  "question_type": "definition|how_to|why|comparison|debugging|code_request|quiz|general",
+  "user_intent": "learning|testing",
   "is_misconception": true/false,
-  "misconception_detail": "what the student may misunderstand (or null)",
-  "is_follow_up": true/false,
+  "misconception_detail": "what is wrong and what is correct (or null)",
   "emotional_state": "confident|curious|confused|frustrated|neutral",
   "suggested_approach": "explain_simply|provide_examples|use_analogy|show_code|ask_questions|correct_misconception"
 }}
+INTENT RULE:
+Set question_type="quiz" and user_intent="testing" ONLY when the user directly requests a quiz using imperative language directed at the system (e.g., "give me a quiz", "test me", "quiz me").
+If quiz-related phrases appear as part of context or indirect speech (e.g., "I have a test tomorrow", "my teacher will give me a quiz"), set user_intent="learning".
+Do NOT trigger quiz intent if the phrase is not a direct request to the system, even if it contains imperative wording in a different context.
 
 Topics should be lowercase with underscores (e.g., neural_networks, gradient_descent).
 Be accurate about complexity - don't overestimate."""
@@ -233,6 +237,10 @@ def should_trigger_comprehension_check(profile):
     
     # Find topics discussed 5+ times without verification
     for topic, data in topics.items():
+        # Skip generic fallback topics for comprehension checks
+        if topic.lower() in ['general', 'unknown']:
+            continue
+            
         if isinstance(data, dict):
             count = data.get('count', 0)
             verified = data.get('verified', False)
@@ -654,8 +662,8 @@ Conversations: {profile.get('conversation_count', 0)}""")
     if recommendations.get('trigger_socratic_mode'):
         adapt_instructions.append(
             "🔄 SOCRATIC MODE: Student shows confusion/misconception. "
-            "Ask probing questions BEFORE explaining. "
-            "Example: 'What do you think happens when...?' or 'Can you tell me your understanding of...?'"
+            "First explain the concept clearly, THEN ask probing questions. "
+            "Example: '...does that make sense? What do you think happens when...?'"
         )
     
     if recommendations.get('emotional_state') == 'frustrated':
@@ -702,7 +710,8 @@ Conversations: {profile.get('conversation_count', 0)}""")
     if check_topic:
         prompt_sections.append(
             f"\n💡 COMPREHENSION CHECK: After answering, ask a quick check question about '{check_topic}' "
-            f"to verify understanding. Example: 'Quick check: Can you explain {check_topic} in your own words?'"
+            f"to verify understanding. Example: 'Quick check: Can you explain {check_topic} in your own words?' "
+            f"(NOTE: If the user explicitly asks NOT to be asked questions, skip this check.)"
         )
     
     enriched_prompt = '\n'.join(prompt_sections)

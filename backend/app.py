@@ -12,6 +12,8 @@ from routes.analytics import analytics_bp
 from routes.context import context_bp
 from routes.adaptive import adaptive_bp
 from routes.admin import admin_bp
+from routes.quiz import quiz_bp
+from services.stt.stt_routes import stt_bp 
 
 # ── Logging ─────────────────────────────────────────────────
 log_level = logging.DEBUG if Config.DEBUG else logging.INFO
@@ -77,7 +79,8 @@ app.register_blueprint(analytics_bp, url_prefix='/api/analytics')
 app.register_blueprint(context_bp, url_prefix='/api/context')
 app.register_blueprint(adaptive_bp, url_prefix='/api/adaptive')
 app.register_blueprint(admin_bp, url_prefix='/api/admin')
-
+app.register_blueprint(quiz_bp, url_prefix='/api/quiz')
+app.register_blueprint(stt_bp, url_prefix='/api/stt')
 
 # ── Health & root ───────────────────────────────────────────
 @app.route('/')
@@ -129,6 +132,8 @@ def internal_error(e):
 def database_unavailable(e):
     logger.warning("Database unavailable during request: %s", e)
     return jsonify({"error": str(e)}), 503
+
+
 
 
 if __name__ == '__main__':

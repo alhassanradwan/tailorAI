@@ -34,10 +34,14 @@ class Config:
     
     # API Keys (for future use with AI agents)
     OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
-    HUGGINGFACE_API_KEY = os.getenv('HUGGINGFACE_API_KEY', '')
+    HUGGINGFACE_API_TOKEN = os.getenv('HUGGINGFACEHUB_API_TOKEN', '')
+
 
     # LangChain integration feature flag (default: enabled)
     USE_LANGCHAIN = os.getenv('USE_LANGCHAIN', 'true').strip().lower() in ('1', 'true', 'yes', 'on')
+    
+    # LangGraph orchestration feature flag (default: disabled)
+    USE_LANGGRAPH = os.getenv('USE_LANGGRAPH', 'false').strip().lower() in ('1', 'true', 'yes', 'on')
 
     # RAG integration feature flag (default: enabled)
     USE_RAG = os.getenv('USE_RAG', 'true').strip().lower() in ('1', 'true', 'yes', 'on')
@@ -46,9 +50,14 @@ class Config:
     DYNAMIC_CHAT_SCHEMA_ENABLED = os.getenv('DYNAMIC_CHAT_SCHEMA_ENABLED', 'true').strip().lower() in ('1', 'true', 'yes', 'on')
     DYNAMIC_INTENT_ROUTER_ENABLED = os.getenv('DYNAMIC_INTENT_ROUTER_ENABLED', 'true').strip().lower() in ('1', 'true', 'yes', 'on')
     
+
+
     # CORS settings (allow frontend to connect)
     # In production, set CORS_ORIGINS env var as comma-separated URLs
     CORS_ORIGINS = [
         o.strip() for o in
         os.getenv('CORS_ORIGINS', 'http://127.0.0.1:5500,http://localhost:5500,http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173').split(',')
     ]
+
+
+
