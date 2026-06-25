@@ -1,20 +1,28 @@
 """
 AdaptiveAI — Recommendation Service
 Generates personalized topic recommendations based on:
-  - Topics the student has asked about
+  - Recent topics the student has asked about (recency-weighted)
   - Student mastery data (weak areas, misconceptions)
   - Knowledge graph relationships (Neo4j primary, fallback dict)
+  - LLM-based topic expansion for topics outside the knowledge graph
 
 Uses the existing Neo4j knowledge graph for topic relationships,
-with a hardcoded fallback for when Neo4j is unavailable.
+with a hardcoded fallback for when Neo4j is unavailable, and
+an LLM fallback for topics not in either graph.
 """
 
 import logging
-from typing import Dict, List
+import os
+import json
+from typing import Dict, List, Optional
 
 from services.knowledge_state import KnowledgeStateService
 
 logger = logging.getLogger(__name__)
+
+# ── In-memory cache for LLM-generated topic relationships ───
+# Avoids repeated API calls for the same topics within a server session.
+_llm_topic_cache: Dict[str, List[str]] = {}
 
 # ── Hardcoded fallback graph ────────────────────────────────
 # Used when Neo4j is unavailable. Maps topic → related topics.
@@ -156,6 +164,96 @@ def _get_neo4j_related(topics: List[str]) -> Dict[str, List[str]]:
         return {}
 
 
+def _get_llm_related_topics(topics: List[str]) -> Dict[str, List[str]]:
+    """
+    LLM fallback: ask Groq to suggest related topics for topics not in
+    the hardcoded graph or Neo4j.
+
+    Uses an in-memory cache to avoid repeated API calls for the same topic.
+    Returns { topic: [related1, related2, ...] } or empty dict on failure.
+    """
+    global _llm_topic_cache
+
+    # Filter to only topics not already cached
+    uncached = [t for t in topics if t not in _llm_topic_cache]
+    if not uncached:
+        return {t: _llm_topic_cache[t] for t in topics if t in _llm_topic_cache}
+
+    try:
+        from groq import Groq
+
+        api_key = os.getenv('GROQ_API_KEY')
+        if not api_key:
+            return {}
+
+        client = Groq(api_key=api_key)
+
+        topics_str = ", ".join(t.replace("_", " ") for t in uncached)
+        prompt = f"""For each of the following topics, suggest 4-6 closely related topics 
+that a student learning about them should explore next. Focus on prerequisite concepts, 
+complementary topics, and natural learning progressions.
+
+Topics: {topics_str}
+
+Return ONLY valid JSON (no markdown, no explanation):
+{{
+  "topic_name": ["related1", "related2", "related3", "related4"],
+  ...
+}}
+
+Use lowercase with underscores for topic names (e.g., "neural_networks", "gradient_descent").
+Only include topics relevant to data science, machine learning, deep learning, programming, 
+mathematics, or computer science."""
+
+        completion = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            max_tokens=500,
+            response_format={"type": "json_object"},
+        )
+
+        result = json.loads(completion.choices[0].message.content)
+
+        # Normalize and cache the results
+        for raw_topic, related_list in result.items():
+            norm_topic = _normalize_topic(raw_topic)
+            if isinstance(related_list, list):
+                normalized_related = [_normalize_topic(r) for r in related_list if isinstance(r, str)]
+                _llm_topic_cache[norm_topic] = normalized_related
+
+        # Return only the requested topics
+        return {t: _llm_topic_cache[t] for t in topics if t in _llm_topic_cache}
+
+    except Exception as e:
+        logger.debug("LLM related-topic lookup failed: %s", e)
+        return {}
+
+
+def _recency_boost(topic: str, recent_topics: List[str]) -> int:
+    """
+    Calculate a score boost based on how recently the topic was discussed.
+
+    recent_topics is ordered most-recent-first (ring buffer from knowledge_state).
+    Position 0-2: +4 boost (just discussed)
+    Position 3-5: +2 boost (recently discussed)
+    Position 6-9: +1 boost (discussed a while ago)
+    """
+    norm = _normalize_topic(topic)
+    normalized_recent = [_normalize_topic(t) for t in recent_topics]
+
+    if norm not in normalized_recent:
+        return 0
+
+    pos = normalized_recent.index(norm)
+    if pos <= 2:
+        return 4
+    elif pos <= 5:
+        return 2
+    else:
+        return 1
+
+
 class RecommendationService:
     """Generate personalized topic recommendations for a student."""
 
@@ -167,6 +265,12 @@ class RecommendationService:
         Return up to MAX_RECOMMENDATIONS topic suggestions.
 
         Each item: { topic, reason, score, related_to }
+
+        Recommendations are dynamically weighted by:
+        - Recency: topics the student asked about most recently get priority
+        - Weakness: weak topics and misconceptions boost related candidates
+        - Exploration: frequently-asked topics suggest unexplored neighbors
+        - Staleness: topics not discussed recently are deprioritized
         """
         ks = KnowledgeStateService.get(user_id)
 
@@ -174,6 +278,7 @@ class RecommendationService:
         weak_topics = set(ks.get("weak_topics", []))
         strong_topics = set(ks.get("strong_topics", []))
         misconceptions = ks.get("misconceptions", {})
+        recent_topics = ks.get("recent_topics", [])
 
         # Normalise explored topic names
         explored = {
@@ -186,16 +291,35 @@ class RecommendationService:
         if not explored_names and not weak_topics:
             return []
 
+        # Normalise recent topics for lookups
+        recent_normalized = [_normalize_topic(t) for t in recent_topics]
+        recent_set = set(recent_normalized)
+
         # ── 1. Build relationship map (Neo4j first, fallback second) ──
+        # Prioritize recent topics — query them first so their neighbors
+        # appear as candidates even if the full history is large.
         all_student_topics = list(explored_names | weak_topics)
         graph_map = _get_neo4j_related(all_student_topics)
 
         # Merge fallback graph for any topics not found in Neo4j
+        topics_without_graph: List[str] = []
         for t in all_student_topics:
             if t not in graph_map:
                 fb = FALLBACK_GRAPH.get(t, [])
                 if fb:
                     graph_map[t] = fb
+                else:
+                    topics_without_graph.append(t)
+
+        # ── 1b. LLM fallback for topics with no graph neighbors ───────
+        # Only query for recent topics that have no graph coverage
+        # (avoids LLM calls for old forgotten topics).
+        llm_candidates = [t for t in topics_without_graph if t in recent_set]
+        if llm_candidates:
+            llm_map = _get_llm_related_topics(llm_candidates)
+            for t, related in llm_map.items():
+                if t not in graph_map and related:
+                    graph_map[t] = related
 
         # ── 2. Collect candidate topics and score them ──────────────
         candidates: Dict[str, dict] = {}  # topic -> { score, reasons[], related_to }
@@ -205,6 +329,9 @@ class RecommendationService:
             source_data = explored.get(source_norm, {})
             source_mastery = source_data.get("mastery_level", 0)
             source_count = source_data.get("count", 0)
+
+            # Calculate how much recency boost this source topic gets
+            source_recency = _recency_boost(source_norm, recent_topics)
 
             for related in related_list:
                 related_norm = _normalize_topic(related)
@@ -228,6 +355,18 @@ class RecommendationService:
                     }
 
                 cand = candidates[related_norm]
+
+                # ── Recency boost: related to what user is currently studying ──
+                if source_recency > 0:
+                    cand["score"] += source_recency
+                    if source_recency >= 4:
+                        cand["reasons"].insert(0,
+                            f"Directly related to what you're currently studying: {source_norm.replace('_', ' ')}"
+                        )
+                    elif source_recency >= 2:
+                        cand["reasons"].append(
+                            f"Related to your recent study of {source_norm.replace('_', ' ')}"
+                        )
 
                 # Score: related to a weak topic
                 if source_norm in {_normalize_topic(w) for w in weak_topics}:
@@ -267,6 +406,14 @@ class RecommendationService:
                         cand["reasons"].append(
                             f"You've started exploring {related_norm.replace('_', ' ')} — keep going!"
                         )
+
+        # ── 2b. Deprioritize stale candidates ─────────────────────────
+        # Candidates whose source topic hasn't been discussed recently
+        # get a small penalty so fresh recommendations rank higher.
+        for topic, data in candidates.items():
+            source = data.get("related_to", "")
+            if source and source not in recent_set:
+                data["score"] -= 1
 
         # ── 3. Rank and return top recommendations ──────────────────
         ranked = sorted(candidates.items(), key=lambda x: x[1]["score"], reverse=True)
