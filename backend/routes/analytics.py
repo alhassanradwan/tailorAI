@@ -9,6 +9,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import Database
 from services.knowledge_state import KnowledgeStateService
+from services.recommendation_service import RecommendationService
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -193,3 +194,17 @@ def engagement():
     except Exception as e:
         logger.error("analytics/engagement error: %s", e, exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@analytics_bp.route('/recommendations', methods=['GET'])
+@jwt_required()
+def recommendations():
+    """Personalized topic recommendations based on mastery, misconceptions, and knowledge graph."""
+    user_id = get_jwt_identity()
+    try:
+        recs = RecommendationService.generate(user_id)
+        return jsonify({"success": True, "recommendations": recs}), 200
+    except Exception as e:
+        logger.error("analytics/recommendations error: %s", e, exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+

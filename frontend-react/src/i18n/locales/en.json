@@ -157,6 +157,12 @@
       "conciseDescription": "AI is giving brief, focused answers as you requested",
       "deepDiveMode": "Deep Dive Mode",
       "deepDiveDescription": "AI is providing thorough, in-depth explanations"
+    },
+    "recommendations": {
+      "title": "Recommended for You",
+      "subtitle": "Topics to explore based on your learning patterns",
+      "empty": "Keep chatting to get personalized topic recommendations!",
+      "chipAction": "Ask about this"
     }
   },
   "onboarding": {

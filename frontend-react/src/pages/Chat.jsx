@@ -4,6 +4,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import useAuth from '../hooks/useAuth';
 import api from '../api/axios';
 import Sidebar from '../components/Sidebar';
@@ -83,6 +84,7 @@ function toSkillLabel(value) {
 export default function Chat() {
   const { t, i18n } = useTranslation();
   const { user, profile, setProfile, chatMessages, setChatMessages, saveContext, selectedTone } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -166,6 +168,35 @@ export default function Chat() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userKey]);
+
+  // Handle ?suggest= URL param from Analytics recommendations
+  const [pendingSuggest, setPendingSuggest] = useState(null);
+  const sendMessageRef = useRef(null);
+
+  // Step 1: Extract the suggest param and store it
+  useEffect(() => {
+    const suggestTopic = searchParams.get('suggest');
+    if (suggestTopic) {
+      setPendingSuggest(suggestTopic);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
+  // Step 2: Once we have a pending topic AND a valid userKey, send the message
+  useEffect(() => {
+    if (!pendingSuggest || !userKey) return;
+    const topic = pendingSuggest;
+
+    const timer = setTimeout(() => {
+      if (sendMessageRef.current) {
+        const message = `I'd like to learn about ${topic}. Can you explain it and how it relates to what I've been studying?`;
+        sendMessageRef.current(message);
+        setPendingSuggest(null); // consume it
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingSuggest, userKey]);
 
   const startNewChat = useCallback(() => {
     const session = ChatHistory.createSession(selectedTone || 'Adaptive Agent');
@@ -371,6 +402,9 @@ export default function Chat() {
       console.error('Chat error:', err);
     }
   };
+
+  // Keep ref in sync so the suggest handler always calls the latest version
+  sendMessageRef.current = sendMessage;
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
