@@ -12,6 +12,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import "../chat-prose.css";
 
+
 const SUGGESTIONS = {
   'Data Science': ['What is data cleaning?', 'Explain correlation vs causation', 'How do I handle missing values?'],
   'Machine Learning': ['What is gradient descent?', 'Explain overfitting', 'What are ensemble methods?'],
@@ -327,15 +328,17 @@ export default function Chat() {
       setIsTyping(false);
 
       if (data.success && data.report) {
-         const aiMsg = {
-           role: 'agent',
-           content: data.report,
-           blocks: [],
-           messageType: 'legacy_text',
-           timestamp: Date.now(),
-         };
-         setChatMessages((prev) => [...prev, aiMsg]);
-         ChatHistory.addMessage(userKey, session.id, { text: data.report, sender: 'agent', timestamp: new Date().toISOString() });
+        const aiMsg = {
+          role: 'agent',
+          content: data.report,
+          isDeepResearch: true,
+          reportMeta: { topic: userMsg, skillLevel: profileScore, mode: modeChoice, sources: data.sources || [] },
+          blocks: [],
+          messageType: 'legacy_text',
+          timestamp: Date.now(),
+        };
+        setChatMessages((prev) => [...prev, aiMsg]);
+        ChatHistory.addMessage(userKey, session.id, { text: data.report, sender: 'agent', timestamp: new Date().toISOString() });
       } else if (data.success && data.response) {
         const aiMsg = {
           role: 'agent',
@@ -795,7 +798,7 @@ export default function Chat() {
           )}
 
           {chatMessages.map((msg, i) => (
-            <MessageBubble key={i} message={msg} userKey={userKey} />
+            <MessageBubble key={i} message={msg} userKey={userKey} user={user} profile={profile} />
           ))}
 
           {isTyping && (
@@ -982,7 +985,136 @@ function HexagonAvatar() {
   );
 }
 
-function MessageBubble({ message, userKey }) {
+// ─── Deep Research PDF export ────────────────────────────────────────────────
+
+function slugify(text) {
+  return (text || 'report')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+}
+
+function loadHtml2Pdf() {
+  if (window.html2pdf) return Promise.resolve(window.html2pdf);
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+    script.onload = () => resolve(window.html2pdf);
+    script.onerror = () => reject(new Error('html2pdf failed to load'));
+    document.head.appendChild(script);
+  });
+}
+
+function ReportPDFWrapper({ message, userName, userEmail }) {
+  const [pdfState, setPdfState] = useState('idle'); // idle | saving | saved
+  const contentRef = useRef(null);
+
+  const handleExport = async () => {
+    if (pdfState !== 'idle') return;
+    setPdfState('saving');
+    try {
+      const html2pdf = await loadHtml2Pdf();
+      const topic = message?.reportMeta?.topic || 'Deep Research Report';
+      const timestamp = new Date().toLocaleString();
+
+      // Build a branded wrapper around the report content
+      const wrapper = document.createElement('div');
+      wrapper.style.cssText = 'font-family: Georgia, serif; color: #1a1a2e; padding: 0;';
+
+      // Header
+      const header = document.createElement('div');
+      header.style.cssText = [
+        'display:flex', 'align-items:center', 'justify-content:space-between',
+        'padding:18px 28px', 'margin-bottom:24px',
+        'background:linear-gradient(135deg,#667eea 0%,#764ba2 50%,#f093fb 100%)',
+        'border-radius:8px',
+      ].join(';');
+      header.innerHTML = `
+        <div style="color:#fff">
+          <div style="font-size:20px;font-weight:700;letter-spacing:0.03em">TailorAI</div>
+          <div style="font-size:11px;opacity:0.85;margin-top:2px;letter-spacing:0.06em;text-transform:uppercase">Deep Research Report</div>
+        </div>
+        <div style="color:rgba(255,255,255,0.85);font-size:11px;text-align:right">
+          ${timestamp}
+        </div>`;
+
+      // Content clone (strip interactive elements)
+      const clone = contentRef.current ? contentRef.current.cloneNode(true) : document.createElement('div');
+      clone.style.cssText = 'font-size:13px;line-height:1.75;color:#1a1a2e';
+      // Remove any buttons from the clone
+      clone.querySelectorAll('button').forEach(b => b.remove());
+
+      // Footer
+      const footer = document.createElement('div');
+      footer.style.cssText = [
+        'margin-top:32px', 'padding-top:12px',
+        'border-top:1px solid #e2e8f0',
+        'display:flex', 'justify-content:space-between',
+        'font-size:10px', 'color:#94a3b8',
+      ].join(';');
+      footer.innerHTML = `
+        <span>${userName ? `Generated for ${userName}${userEmail ? ` · ${userEmail}` : ''}` : 'TailorAI'}</span>
+        <span>tailorai.app</span>`;
+
+      wrapper.appendChild(header);
+      wrapper.appendChild(clone);
+      wrapper.appendChild(footer);
+      document.body.appendChild(wrapper);
+
+      await html2pdf()
+        .set({
+          margin: [14, 14, 14, 14],
+          filename: `tailorai-${slugify(topic)}.pdf`,
+          image: { type: 'jpeg', quality: 0.97 },
+          html2canvas: { scale: 2, useCORS: true, logging: false },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+          pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+        })
+        .from(wrapper)
+        .save();
+
+      document.body.removeChild(wrapper);
+      setPdfState('saved');
+      setTimeout(() => setPdfState('idle'), 2500);
+    } catch (err) {
+      console.error('[PDF export]', err);
+      setPdfState('idle');
+    }
+  };
+
+  return (
+    <div className="report-pdf-wrapper">
+      <div className="report-pdf-toolbar">
+        <button
+          className={`report-pdf-btn${pdfState === 'saved' ? ' saved' : ''}`}
+          onClick={handleExport}
+          disabled={pdfState === 'saving'}
+          type="button"
+          title="Download as PDF"
+        >
+          {pdfState === 'idle' && 'pdf'}
+          {pdfState === 'saving' && (
+            <span className="report-pdf-spinner">
+              <svg viewBox="0 0 16 16" fill="none" width="11" height="11">
+                <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" strokeDasharray="28" strokeDashoffset="10" />
+              </svg>
+              saving…
+            </span>
+          )}
+          {pdfState === 'saved' && '✓ saved'}
+        </button>
+      </div>
+      <div ref={contentRef} className="prose-message">
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+          {message?.content || ''}
+        </ReactMarkdown>
+      </div>
+    </div>
+  );
+}
+
+function MessageBubble({ message, userKey, user, profile }) {
   const isUser = message.role === 'user';
   const profilePic = localStorage.getItem(profilePicKey(userKey));
 
@@ -996,7 +1128,12 @@ function MessageBubble({ message, userKey }) {
 
       <div className="message-enhanced-wrapper">
         <div className="message-enhanced-content">
-          {isUser ? message.content : <DynamicMessageContent message={message} />}
+          {isUser
+            ? message.content
+            : message.isDeepResearch
+              ? <ReportPDFWrapper message={message} userName={user?.name || profile?.name} userEmail={user?.email} />
+              : <DynamicMessageContent message={message} />
+          }
         </div>
         <div className="message-enhanced-timestamp">{formatTimestamp(message.timestamp || new Date().toISOString())}</div>
       </div>

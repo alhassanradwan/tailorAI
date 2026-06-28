@@ -180,3 +180,65 @@
   text-underline-offset: 2px;
 }
 .prose-message a:hover { color: #a5b4fc; }
+
+/* ─── Deep Research PDF export button ──────────────────────────────────────── */
+
+.report-pdf-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.report-pdf-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
+
+.report-pdf-btn {
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.45);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 40px;
+  justify-content: center;
+}
+
+.report-pdf-btn:hover:not(:disabled) {
+  color: rgba(255, 255, 255, 0.85);
+  border-color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.report-pdf-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.report-pdf-btn.saved {
+  color: #5cd8a0;
+  border-color: rgba(92, 216, 160, 0.4);
+}
+
+.report-pdf-spinner {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.report-pdf-spinner svg {
+  animation: report-pdf-spin 0.9s linear infinite;
+}
+
+@keyframes report-pdf-spin {
+  to { transform: rotate(360deg); }
+}
