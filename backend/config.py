@@ -36,6 +36,7 @@ class Config:
     OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
     HUGGINGFACE_API_TOKEN = os.getenv('HUGGINGFACEHUB_API_TOKEN', '')
 
+    TAVILY_API_KEY = os.getenv('TAVILY_API_KEY', '')
 
     # LangChain integration feature flag (default: enabled)
     USE_LANGCHAIN = os.getenv('USE_LANGCHAIN', 'true').strip().lower() in ('1', 'true', 'yes', 'on')

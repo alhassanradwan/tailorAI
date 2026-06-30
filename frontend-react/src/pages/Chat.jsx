@@ -1,4 +1,3 @@
-
 //##################3##############################################################################3
 
 
@@ -10,6 +9,10 @@ import api from '../api/axios';
 import Sidebar from '../components/Sidebar';
 import QuizModal from '../components/QuizModal';
 import { formatTimestamp, ChatHistory } from '../utils/helpers';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import "../chat-prose.css";
+
 
 const SUGGESTIONS = {
   'Data Science': ['What is data cleaning?', 'Explain correlation vs causation', 'How do I handle missing values?'],
@@ -96,6 +99,7 @@ export default function Chat() {
   const [modeChoice, setModeChoice] = useState('auto');
   const [isListening, setIsListening] = useState(false);
   const [attachedFile, setAttachedFile] = useState(null);
+  const [isDeepResearchMode, setIsDeepResearchMode] = useState(false);
 
   const [showQuizModal, setShowQuizModal] = useState(false);
   const [quizTriggerReason, setQuizTriggerReason] = useState('direct_request');
@@ -336,16 +340,37 @@ export default function Chat() {
         },
       };
 
-      const { data } = await api.post('/chat/groq', {
+      const endpoint = isDeepResearchMode ? '/research/deep-research' : '/chat/groq';
+      const payload = isDeepResearchMode ? {
+        user_id: user?.id,
+        message: userMsg,
+        topic: userMsg,
+        depth: 'medium',
+        max_sources: 10
+      } : {
         user_id: user?.id,
         message: userMsg,
         profile: profilePayload,
         chat_history: chatHistory,
-      });
+      };
+
+      const { data } = await api.post(endpoint, payload);
 
       setIsTyping(false);
 
-      if (data.success && data.response) {
+      if (data.success && data.report) {
+        const aiMsg = {
+          role: 'agent',
+          content: data.report,
+          isDeepResearch: true,
+          reportMeta: { topic: userMsg, skillLevel: profileScore, mode: modeChoice, sources: data.sources || [] },
+          blocks: [],
+          messageType: 'legacy_text',
+          timestamp: Date.now(),
+        };
+        setChatMessages((prev) => [...prev, aiMsg]);
+        ChatHistory.addMessage(userKey, session.id, { text: data.report, sender: 'agent', timestamp: new Date().toISOString() });
+      } else if (data.success && data.response) {
         const aiMsg = {
           role: 'agent',
           content: data.response,
@@ -807,7 +832,7 @@ export default function Chat() {
           )}
 
           {chatMessages.map((msg, i) => (
-            <MessageBubble key={i} message={msg} userKey={userKey} />
+            <MessageBubble key={i} message={msg} userKey={userKey} user={user} profile={profile} />
           ))}
 
           {isTyping && (
@@ -852,6 +877,24 @@ export default function Chat() {
                 <line x1="5" y1="12" x2="19" y2="12" />
               </svg>
             </button>
+
+            <div className="chat-divider"></div>
+
+            <button
+              type="button"
+              className={`deep-research-toggle ${isDeepResearchMode ? 'active' : ''}`}
+              onClick={() => setIsDeepResearchMode(!isDeepResearchMode)}
+              aria-label="Toggle Deep Research"
+              aria-pressed={isDeepResearchMode}
+            >
+              <svg className="telescope-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22.9 22.9l-5.6-5.6"></path>
+                <path d="M12.2 12.2a4 4 0 105.7 5.7L22.9 22.9l-4.9-5-1-1a4 4 0 00-4.8 0L9.8 14.5a2 2 0 01-1.3.5 2 2 0 01-1.4-.6L1.1 8.4A2 2 0 011 5.6 2 2 0 013.8 5L9.8 11a4 4 0 002.4 1.2M13.2 2a9.9 9.9 0 003.5.7 9 9 0 005.1-1.5M10.8 19.3L15 23M3 13.8L5.5 16.5M1.3 10L6.8 15M7 6l4-4"></path>
+              </svg>
+              <span>Deep research</span>
+            </button>
+
+            <div className="chat-divider"></div>
 
             <textarea
               ref={inputRef}
@@ -951,7 +994,7 @@ export default function Chat() {
 
       {showQuizModal && (
         <QuizModal
-          userMessage={quizUserMessage || userMsg}
+          userMessage={quizUserMessage || ''}
           triggerReason={quizTriggerReason}
           onClose={() => setShowQuizModal(false)}
           onComplete={handleQuizComplete}
@@ -976,7 +1019,136 @@ function HexagonAvatar() {
   );
 }
 
-function MessageBubble({ message, userKey }) {
+// ─── Deep Research PDF export ────────────────────────────────────────────────
+
+function slugify(text) {
+  return (text || 'report')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+}
+
+function loadHtml2Pdf() {
+  if (window.html2pdf) return Promise.resolve(window.html2pdf);
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+    script.onload = () => resolve(window.html2pdf);
+    script.onerror = () => reject(new Error('html2pdf failed to load'));
+    document.head.appendChild(script);
+  });
+}
+
+function ReportPDFWrapper({ message, userName, userEmail }) {
+  const [pdfState, setPdfState] = useState('idle'); // idle | saving | saved
+  const contentRef = useRef(null);
+
+  const handleExport = async () => {
+    if (pdfState !== 'idle') return;
+    setPdfState('saving');
+    try {
+      const html2pdf = await loadHtml2Pdf();
+      const topic = message?.reportMeta?.topic || 'Deep Research Report';
+      const timestamp = new Date().toLocaleString();
+
+      // Build a branded wrapper around the report content
+      const wrapper = document.createElement('div');
+      wrapper.style.cssText = 'font-family: Georgia, serif; color: #1a1a2e; padding: 0;';
+
+      // Header
+      const header = document.createElement('div');
+      header.style.cssText = [
+        'display:flex', 'align-items:center', 'justify-content:space-between',
+        'padding:18px 28px', 'margin-bottom:24px',
+        'background:linear-gradient(135deg,#667eea 0%,#764ba2 50%,#f093fb 100%)',
+        'border-radius:8px',
+      ].join(';');
+      header.innerHTML = `
+        <div style="color:#fff">
+          <div style="font-size:20px;font-weight:700;letter-spacing:0.03em">TailorAI</div>
+          <div style="font-size:11px;opacity:0.85;margin-top:2px;letter-spacing:0.06em;text-transform:uppercase">Deep Research Report</div>
+        </div>
+        <div style="color:rgba(255,255,255,0.85);font-size:11px;text-align:right">
+          ${timestamp}
+        </div>`;
+
+      // Content clone (strip interactive elements)
+      const clone = contentRef.current ? contentRef.current.cloneNode(true) : document.createElement('div');
+      clone.style.cssText = 'font-size:13px;line-height:1.75;color:#1a1a2e';
+      // Remove any buttons from the clone
+      clone.querySelectorAll('button').forEach(b => b.remove());
+
+      // Footer
+      const footer = document.createElement('div');
+      footer.style.cssText = [
+        'margin-top:32px', 'padding-top:12px',
+        'border-top:1px solid #e2e8f0',
+        'display:flex', 'justify-content:space-between',
+        'font-size:10px', 'color:#94a3b8',
+      ].join(';');
+      footer.innerHTML = `
+        <span>${userName ? `Generated for ${userName}${userEmail ? ` · ${userEmail}` : ''}` : 'TailorAI'}</span>
+        <span>tailorai.app</span>`;
+
+      wrapper.appendChild(header);
+      wrapper.appendChild(clone);
+      wrapper.appendChild(footer);
+      document.body.appendChild(wrapper);
+
+      await html2pdf()
+        .set({
+          margin: [14, 14, 14, 14],
+          filename: `tailorai-${slugify(topic)}.pdf`,
+          image: { type: 'jpeg', quality: 0.97 },
+          html2canvas: { scale: 2, useCORS: true, logging: false },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+          pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+        })
+        .from(wrapper)
+        .save();
+
+      document.body.removeChild(wrapper);
+      setPdfState('saved');
+      setTimeout(() => setPdfState('idle'), 2500);
+    } catch (err) {
+      console.error('[PDF export]', err);
+      setPdfState('idle');
+    }
+  };
+
+  return (
+    <div className="report-pdf-wrapper">
+      <div className="report-pdf-toolbar">
+        <button
+          className={`report-pdf-btn${pdfState === 'saved' ? ' saved' : ''}`}
+          onClick={handleExport}
+          disabled={pdfState === 'saving'}
+          type="button"
+          title="Download as PDF"
+        >
+          {pdfState === 'idle' && 'pdf'}
+          {pdfState === 'saving' && (
+            <span className="report-pdf-spinner">
+              <svg viewBox="0 0 16 16" fill="none" width="11" height="11">
+                <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" strokeDasharray="28" strokeDashoffset="10" />
+              </svg>
+              saving…
+            </span>
+          )}
+          {pdfState === 'saved' && '✓ saved'}
+        </button>
+      </div>
+      <div ref={contentRef} className="prose-message">
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+          {message?.content || ''}
+        </ReactMarkdown>
+      </div>
+    </div>
+  );
+}
+
+function MessageBubble({ message, userKey, user, profile }) {
   const isUser = message.role === 'user';
   const profilePic = localStorage.getItem(profilePicKey(userKey));
 
@@ -990,7 +1162,12 @@ function MessageBubble({ message, userKey }) {
 
       <div className="message-enhanced-wrapper">
         <div className="message-enhanced-content">
-          {isUser ? message.content : <DynamicMessageContent message={message} />}
+          {isUser
+            ? message.content
+            : message.isDeepResearch
+              ? <ReportPDFWrapper message={message} userName={user?.name || profile?.name} userEmail={user?.email} />
+              : <DynamicMessageContent message={message} />
+          }
         </div>
         <div className="message-enhanced-timestamp">{formatTimestamp(message.timestamp || new Date().toISOString())}</div>
       </div>
@@ -1011,152 +1188,106 @@ function MessageBubble({ message, userKey }) {
   );
 }
 
+// ─── Message content renderer ────────────────────────────────────────────────
+// Always renders via ReactMarkdown so headings, code blocks, tables, bold, etc.
+// are correctly styled. Structured blocks (if present) are serialised back to
+// markdown so they go through the same single rendering path.
+
+import { useState as _useState } from 'react';
+
 function DynamicMessageContent({ message }) {
   const blocks = Array.isArray(message?.blocks) ? message.blocks : [];
-  if (!blocks.length) {
-    return message?.content || '';
-  }
+
+  // Prefer structured blocks when present: serialise them to markdown
+  const markdown = blocks.length
+    ? blocksToMarkdown(blocks)
+    : (message?.content || '');
 
   return (
-    <div className="dynamic-message-blocks">
-      {blocks.map((block, idx) => (
-        <div key={`${block?.type || 'text'}-${idx}`} className="dynamic-block-wrap">
-          {idx > 0 ? <div className="dynamic-block-separator" aria-hidden="true" /> : null}
-          <DynamicBlock block={block} />
-        </div>
-      ))}
+    <div className="prose-message">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={markdownComponents}
+      >
+        {markdown}
+      </ReactMarkdown>
     </div>
   );
 }
 
-function DynamicBlock({ block }) {
-  const type = (block?.type || 'text').toLowerCase();
-  const title = cleanMarkdownLine(block?.title || '');
-  const text = block?.text || '';
-  const items = Array.isArray(block?.items) ? block.items : [];
-  const rows = Array.isArray(block?.rows) ? block.rows : [];
+// Converts the legacy block schema back to clean markdown so we have one render path
+function blocksToMarkdown(blocks) {
+  return blocks
+    .map((block) => {
+      const type = (block?.type || 'text').toLowerCase();
+      const title = (block?.title || '').trim();
+      const text = (block?.text || '').trim();
+      const items = Array.isArray(block?.items) ? block.items : [];
+      const rows = Array.isArray(block?.rows) ? block.rows : [];
 
-  if (type === 'code') {
-    return (
-      <div className="dynamic-block dynamic-block-code">
-        {title ? <strong>{title}</strong> : null}
-        <pre><code>{text}</code></pre>
-      </div>
-    );
-  }
+      const heading = title ? `### ${title}\n\n` : '';
 
-  if (type === 'steps' || type === 'quiz') {
-    const lines = items.length
-      ? items
-      : text.split('\n').map((line) => line.trim()).filter(Boolean);
-    return (
-      <div className="dynamic-block dynamic-block-list">
-        {title ? <strong>{title}</strong> : null}
-        <ul>
-          {lines.map((line, idx) => (
-            <li key={`${type}-line-${idx}`}><RichTextLine text={cleanMarkdownLine(line.replace(/^[-*]\s*/, ''))} /></li>
-          ))}
-        </ul>
-      </div>
-    );
-  }
+      if (type === 'code') {
+        const lang = (block?.language || '').trim();
+        return `${heading}\`\`\`${lang}\n${text}\n\`\`\``;
+      }
 
-  const parsedTable = rows.length ? { headers: Object.keys(rows[0] || {}), dataRows: rows } : parseMarkdownTable(text);
-  if (type === 'comparison_table' && parsedTable.dataRows.length) {
-    const headers = parsedTable.headers;
-    return (
-      <div className="dynamic-block dynamic-block-table">
-        {title ? <strong>{title}</strong> : null}
-        <table>
-          <thead>
-            <tr>
-              {headers.map((h) => <th key={h}><RichTextLine text={cleanMarkdownLine(h)} /></th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {parsedTable.dataRows.map((row, ridx) => (
-              <tr key={`row-${ridx}`}>
-                {headers.map((h) => (
-                  <td key={`${ridx}-${h}`}>
-                    <RichTextLine text={cleanMarkdownLine(String(row[h] || ''))} />
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  }
+      if (type === 'steps' || type === 'quiz') {
+        const lines = items.length
+          ? items
+          : text.split('\n').map((l) => l.trim()).filter(Boolean);
+        const list = lines.map((l) => `- ${l.replace(/^[-*]\s*/, '')}`).join('\n');
+        return `${heading}${list}`;
+      }
 
-  return (
-    <div className="dynamic-block dynamic-block-text">
-      {title ? <strong>{title}</strong> : null}
-      <div className="dynamic-text-lines">
-        {text
-          .split('\n')
-          .map((line) => line.trim())
-          .filter(Boolean)
-          .map((line, idx) => (
-            <div key={`txt-${idx}`}>
-              <RichTextLine text={cleanMarkdownLine(line)} />
-            </div>
-          ))}
-      </div>
-    </div>
-  );
-}
-
-function cleanMarkdownLine(raw) {
-  return (raw || '')
-    .replace(/^#{1,6}\s*/, '')
-    .replace(/`/g, '')
-    .trim();
-}
-
-function RichTextLine({ text }) {
-  const parts = String(text || '').split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
-  if (!parts.length) return null;
-  return (
-    <>
-      {parts.map((part, idx) => {
-        const isBold = /^\*\*[^*]+\*\*$/.test(part);
-        if (isBold) {
-          return <strong key={`b-${idx}`}>{part.slice(2, -2)}</strong>;
+      if (type === 'comparison_table') {
+        if (rows.length) {
+          const headers = Object.keys(rows[0] || {});
+          const sep = headers.map(() => '---').join(' | ');
+          const head = headers.join(' | ');
+          const body = rows.map((r) => headers.map((h) => r[h] ?? '').join(' | ')).join('\n');
+          return `${heading}| ${head} |\n| ${sep} |\n${body.split('\n').map((r) => `| ${r} |`).join('\n')}`;
         }
-        return <span key={`t-${idx}`}>{part}</span>;
-      })}
-    </>
+        // Already markdown table in text field
+        return `${heading}${text}`;
+      }
+
+      return `${heading}${text}`;
+    })
+    .join('\n\n');
+}
+
+// Custom renderers: code blocks get a header bar + copy button; everything else
+// uses the default ReactMarkdown output (which we style via CSS).
+function CodeBlock({ node, inline, className, children, ...props }) {
+  const [copied, setCopied] = _useState(false);
+  const lang = (className || '').replace('language-', '') || 'code';
+  const code = String(children).replace(/\n$/, '');
+
+  if (inline) {
+    return <code className="inline-code" {...props}>{children}</code>;
+  }
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <div className="code-block-wrapper">
+      <div className="code-block-header">
+        <span className="code-block-lang">{lang}</span>
+        <button className={`code-copy-btn${copied ? ' copied' : ''}`} onClick={handleCopy} type="button">
+          {copied ? '✓ copied' : 'copy'}
+        </button>
+      </div>
+      <pre className="code-block-pre"><code className={className} {...props}>{children}</code></pre>
+    </div>
   );
 }
 
-function parseMarkdownTable(text) {
-  const lines = String(text || '')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.includes('|'));
-
-  if (lines.length < 2) return { headers: [], dataRows: [] };
-
-  const rawRows = lines
-    .map((line) => line.replace(/^\||\|$/g, '').split('|').map((cell) => cell.trim()))
-    .filter((cells) => cells.length >= 2);
-
-  if (rawRows.length < 2) return { headers: [], dataRows: [] };
-
-  const isSeparator = (cells) => cells.every((cell) => /^:?-{3,}:?$/.test(cell));
-  const header = rawRows[0];
-  const bodyRows = rawRows.slice(1).filter((cells) => !isSeparator(cells));
-  if (!bodyRows.length) return { headers: [], dataRows: [] };
-
-  const headers = header.map((h) => cleanMarkdownLine(h));
-  const dataRows = bodyRows.map((cells) => {
-    const row = {};
-    headers.forEach((h, idx) => {
-      row[h] = cleanMarkdownLine(cells[idx] || '');
-    });
-    return row;
-  });
-
-  return { headers, dataRows };
-}
+const markdownComponents = {
+  code: CodeBlock,
+};

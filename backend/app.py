@@ -13,6 +13,7 @@ from routes.context import context_bp
 from routes.adaptive import adaptive_bp
 from routes.admin import admin_bp
 from routes.quiz import quiz_bp
+from services.deepresearch.deep_research_service import research_bp
 from services.stt.stt_routes import stt_bp 
 
 # ── Logging ─────────────────────────────────────────────────
@@ -80,6 +81,7 @@ app.register_blueprint(context_bp, url_prefix='/api/context')
 app.register_blueprint(adaptive_bp, url_prefix='/api/adaptive')
 app.register_blueprint(admin_bp, url_prefix='/api/admin')
 app.register_blueprint(quiz_bp, url_prefix='/api/quiz')
+app.register_blueprint(research_bp, url_prefix='/api/research')
 app.register_blueprint(stt_bp, url_prefix='/api/stt')
 
 # ── Health & root ───────────────────────────────────────────
